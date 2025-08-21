@@ -155,9 +155,10 @@ public class PassageAnalytics {
     
     private var config: PassageAnalyticsConfig = .default
     private var eventQueue: [PassageAnalyticsPayload] = []
-    private var flushTimer: Timer?
+    private var flushTimer: DispatchSourceTimer?
     private var isProcessing: Bool = false
     private let queueLock = NSLock()
+    private let analyticsQueue = DispatchQueue(label: "com.passage.analytics", qos: .utility)
     
     // SDK Information
     private var sdkVersion: String?
@@ -486,15 +487,19 @@ public class PassageAnalytics {
     private func startAnalytics() {
         stopAnalytics() // Stop existing timer if any
         
-        flushTimer = Timer.scheduledTimer(withTimeInterval: config.flushInterval, repeats: true) { [weak self] _ in
+        let timer = DispatchSource.makeTimerSource(queue: analyticsQueue)
+        timer.schedule(deadline: .now() + config.flushInterval, repeating: config.flushInterval)
+        timer.setEventHandler { [weak self] in
             self?.flushEvents()
         }
+        timer.resume()
+        flushTimer = timer
     }
     
     private func stopAnalytics() {
-        flushTimer?.invalidate()
+        flushTimer?.cancel()
         flushTimer = nil
-        flushEvents() // Final flush
+        // Do not synchronously flush on stop to avoid blocking
     }
     
     private func queueEvent(_ payload: PassageAnalyticsPayload) {
@@ -510,28 +515,30 @@ public class PassageAnalytics {
     }
     
     public func flushEvents() {
-        guard config.enabled && !isProcessing else { return }
-        
-        queueLock.lock()
-        let eventsToSend = eventQueue
-        eventQueue.removeAll()
-        queueLock.unlock()
-        
-        guard !eventsToSend.isEmpty else { return }
-        
-        isProcessing = true
-        
-        sendEvents(events: eventsToSend, retryCount: 0) { [weak self] success in
-            DispatchQueue.main.async {
-                self?.isProcessing = false
+        analyticsQueue.async { [weak self] in
+            guard let self = self else { return }
+            guard self.config.enabled && !self.isProcessing else { return }
+            
+            self.queueLock.lock()
+            let eventsToSend = self.eventQueue
+            self.eventQueue.removeAll()
+            self.queueLock.unlock()
+            
+            guard !eventsToSend.isEmpty else { return }
+            
+            self.isProcessing = true
+            
+            self.sendEvents(events: eventsToSend, retryCount: 0) { [weak self] success in
+                guard let self = self else { return }
+                self.isProcessing = false
                 
                 if !success {
                     // Re-queue failed events (with limit to prevent infinite growth)
-                    self?.queueLock.lock()
-                    if let strongSelf = self, strongSelf.eventQueue.count < 100 {
-                        strongSelf.eventQueue.insert(contentsOf: eventsToSend, at: 0)
+                    self.queueLock.lock()
+                    if self.eventQueue.count < 100 {
+                        self.eventQueue.insert(contentsOf: eventsToSend, at: 0)
                     }
-                    self?.queueLock.unlock()
+                    self.queueLock.unlock()
                 }
             }
         }
@@ -565,7 +572,8 @@ public class PassageAnalytics {
                     
                     // Retry logic
                     if retryCount < self?.config.maxRetries ?? 0 {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + (self?.config.retryDelay ?? 1.0) * Double(retryCount + 1)) {
+                        let delay = (self?.config.retryDelay ?? 1.0) * Double(retryCount + 1)
+                        self?.analyticsQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
                             self?.sendEvents(events: events, retryCount: retryCount + 1, completion: completion)
                         }
                     } else {
@@ -580,7 +588,8 @@ public class PassageAnalytics {
                         
                         // Retry logic for server errors
                         if retryCount < self?.config.maxRetries ?? 0 {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + (self?.config.retryDelay ?? 1.0) * Double(retryCount + 1)) {
+                            let delay = (self?.config.retryDelay ?? 1.0) * Double(retryCount + 1)
+                            self?.analyticsQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
                                 self?.sendEvents(events: events, retryCount: retryCount + 1, completion: completion)
                             }
                         } else {
