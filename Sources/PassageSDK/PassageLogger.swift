@@ -34,12 +34,27 @@ struct LogEntry: Codable {
     let metadata: [String: String]?
     let timestamp: String
     let sessionId: String?
-    let source: String = "sdk"
-    let sdkName: String = "swift-ios"
+    let source: String
+    let sdkName: String
     let sdkVersion: String?
     let appVersion: String?
-    let platform: String = "ios"
+    let platform: String
     let deviceInfo: [String: String]?
+    
+    init(level: String, message: String, context: String? = nil, metadata: [String: String]? = nil, timestamp: String, sessionId: String? = nil, sdkVersion: String? = nil, appVersion: String? = nil, deviceInfo: [String: String]? = nil) {
+        self.level = level
+        self.message = message
+        self.context = context
+        self.metadata = metadata
+        self.timestamp = timestamp
+        self.sessionId = sessionId
+        self.source = "sdk"
+        self.sdkName = "swift-ios"
+        self.sdkVersion = sdkVersion
+        self.appVersion = appVersion
+        self.platform = "ios"
+        self.deviceInfo = deviceInfo
+    }
 }
 
 struct LogBatch: Codable {
@@ -113,7 +128,7 @@ public class PassageLogger {
         startHttpTransport()
         
         if debug {
-            info("Logger configured with debug enabled, HTTP transport: enabled")
+            info("Logger configured with debug enabled, HTTP transport: enabled, SDK version: \(sdkVersion ?? "unknown")")
         }
     }
 
@@ -222,8 +237,8 @@ public class PassageLogger {
     
     // Check if we should log at the given level
     private func shouldLog(_ level: PassageLogLevel) -> Bool {
-        // When debug is disabled, suppress all DEBUG level messages
-        if !isDebugEnabled && level == .debug {
+        // When debug is disabled, suppress ALL logging
+        if !isDebugEnabled {
             return false
         }
         return level.rawValue >= logLevel.rawValue
@@ -327,7 +342,9 @@ public class PassageLogger {
     // Send logs to HTTP endpoint with retry logic
     private func sendLogs(batch: LogBatch, retryCount: Int, completion: @escaping (Bool) -> Void) {
         guard let url = URL(string: httpConfig.endpoint) else {
-            print("PassageLogger: Invalid endpoint URL: \(httpConfig.endpoint)")
+            if isDebugEnabled {
+                print("PassageLogger: Invalid endpoint URL: \(httpConfig.endpoint)")
+            }
             completion(false)
             return
         }
@@ -355,7 +372,9 @@ public class PassageLogger {
                         }
                     }
                 } else if let error = error {
-                    print("PassageLogger: Request error: \(error.localizedDescription)")
+                    if self?.isDebugEnabled == true {
+                        print("PassageLogger: Request error: \(error.localizedDescription)")
+                    }
                     // Retry logic
                     if retryCount < self?.httpConfig.maxRetries ?? 0 {
                         DispatchQueue.main.asyncAfter(deadline: .now() + (self?.httpConfig.retryDelay ?? 1.0) * Double(retryCount + 1)) {
@@ -368,7 +387,9 @@ public class PassageLogger {
             }.resume()
             
         } catch {
-            print("PassageLogger: JSON encoding error: \(error.localizedDescription)")
+            if isDebugEnabled {
+                print("PassageLogger: JSON encoding error: \(error.localizedDescription)")
+            }
             completion(false)
         }
     }
@@ -448,6 +469,17 @@ public class PassageLogger {
         }
         
         return "\(url.prefix(maxLength))..."
+    }
+    
+    public func truncateHtml(_ html: String?, maxLength: Int = 100) -> String {
+        guard let html = html else { return "nil" }
+        
+        if html.count <= maxLength {
+            return "\(html.count) chars"
+        }
+        
+        let truncated = String(html.prefix(maxLength))
+        return "\(html.count) chars (first \(maxLength): \(truncated)...)"
     }
 }
 

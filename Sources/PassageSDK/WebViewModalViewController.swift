@@ -1,5 +1,5 @@
 import UIKit
-import WebKit
+@preconcurrency import WebKit
 
 // Define the delegate protocol
 protocol WebViewModalDelegate: AnyObject {
@@ -26,8 +26,13 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     // Callback closures
     var onMessage: ((Any) -> Void)?
     var onClose: (() -> Void)?
+    var onWebviewChange: ((String) -> Void)?
     
-    // Dual webviews
+    // Remote control reference (for navigation completion)
+    var remoteControl: RemoteControlManager?
+    
+    // Dual webviews - created once and reused across sessions
+    // These are never destroyed during the SDK lifecycle unless releaseResources() is called
     private var uiWebView: WKWebView!
     private var automationWebView: WKWebView!
     
@@ -38,13 +43,17 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     // Store pending user action command
     private var pendingUserActionCommand: PendingUserActionCommand?
     
+    // Screenshot support (matching React Native implementation)
+    private var currentScreenshot: String?
+    private var previousScreenshot: String?
+    
     // Store initial URL to load after view appears
     private var initialURLToLoad: String?
     
     // Debug: force rendering just one webview with a predefined URL
-    private let debugSingleWebViewUrl: String? = "https://google.com"
+    private let debugSingleWebViewUrl: String? = nil
     // Temporary: force a simple, Capacitor-like single webview configuration
-    private let forceSimpleWebView: Bool = true
+    private let forceSimpleWebView: Bool = false
     
     // Navigation timeout timer
     private var navigationTimeoutTimer: Timer?
@@ -52,56 +61,70 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        passageLogger.info("[WEBVIEW] ========== VIEW DID LOAD ==========")
+        passageLogger.info("[WEBVIEW] Initial URL: \(url.isEmpty ? "empty" : passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.info("[WEBVIEW] Show grabber: \(showGrabber)")
+        passageLogger.info("[WEBVIEW] Title text: \(titleText)")
+        passageLogger.info("[WEBVIEW] Force simple webview: \(forceSimpleWebView)")
+        passageLogger.info("[WEBVIEW] Debug single webview URL: \(debugSingleWebViewUrl ?? "nil")")
+        
+        // Setup screenshot accessors for remote control
+        setupScreenshotAccessors()
+        
         setupUI()
         setupWebViews()
+        setupNotificationObservers()
         
-        // Configure navigation bar appearance
-        if let navigationBar = navigationController?.navigationBar {
-            let appearance = UINavigationBarAppearance()
-            appearance.configureWithOpaqueBackground()
-            appearance.backgroundColor = .white
-            appearance.shadowColor = .clear
-            
-            navigationBar.standardAppearance = appearance
-            navigationBar.scrollEdgeAppearance = appearance
-            navigationBar.compactAppearance = appearance
-        }
+        // Hide navigation bar completely to remove white header
+        navigationController?.setNavigationBarHidden(true, animated: false)
         
-        // Keep navigation bar but leave title empty
-        navigationItem.title = ""
+        passageLogger.debug("[WEBVIEW] Navigation bar hidden to remove white header")
 
         // If in debug single-webview mode, we've already created and loaded it in setupWebViews.
         if let debugUrl = debugSingleWebViewUrl, !debugUrl.isEmpty {
-            passageLogger.debug("[DEBUG MODE] viewDidLoad short-circuit; single webview already loading: \(passageLogger.truncateUrl(debugUrl, maxLength: 100))")
+            passageLogger.info("[WEBVIEW DEBUG MODE] Single webview mode active with URL: \(passageLogger.truncateUrl(debugUrl, maxLength: 100))")
             return
         }
 
         // Parity with Capacitor: if `url` was set, load it immediately
         if !url.isEmpty {
-            passageLogger.debug("viewDidLoad: loading provided url: \(passageLogger.truncateUrl(url, maxLength: 100))")
+            passageLogger.info("[WEBVIEW] Loading provided URL immediately: \(passageLogger.truncateUrl(url, maxLength: 100))")
             loadURL(url)
         } else if let pending = initialURLToLoad {
             // If a URL was queued before view was ready, load it now
-            passageLogger.debug("viewDidLoad: loading pending initialURLToLoad: \(passageLogger.truncateUrl(pending, maxLength: 100))")
+            passageLogger.info("[WEBVIEW] Loading pending URL: \(passageLogger.truncateUrl(pending, maxLength: 100))")
             initialURLToLoad = nil
             loadURL(pending)
+        } else {
+            passageLogger.warn("[WEBVIEW] No URL to load in viewDidLoad")
         }
 
-        // Keep behavior minimal like Capacitor; UI webview loads in viewDidLoad
+        passageLogger.info("[WEBVIEW] viewDidLoad completed")
     }
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         
+        passageLogger.info("[WEBVIEW] View appeared")
+        
+        // Quick validation - only log if there are issues
+        if uiWebView == nil {
+            passageLogger.error("[WEBVIEW] UI WebView is nil!")
+        } else if let url = uiWebView?.url {
+            passageLogger.debug("[WEBVIEW] UI WebView URL: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
+        }
+        
         // Load initial URL if it was set before view appeared
         if let urlToLoad = initialURLToLoad {
-            passageLogger.debug("View appeared, loading deferred URL: \(passageLogger.truncateUrl(urlToLoad, maxLength: 100))")
-            passageLogger.debug("View frame: \(view.frame)")
-            passageLogger.debug("UIWebView frame: \(uiWebView.frame)")
-            passageLogger.debug("Window: \(view.window != nil ? "exists" : "nil")")
-            
+            passageLogger.info("[WEBVIEW] Loading deferred URL: \(passageLogger.truncateUrl(urlToLoad, maxLength: 100))")
             initialURLToLoad = nil
             loadURL(urlToLoad)
+        }
+        
+        // Reset to UI webview when reappearing (in case automation was shown)
+        if !isShowingUIWebView {
+            passageLogger.info("[WEBVIEW] Resetting to UI webview on reappear")
+            showUIWebView()
         }
     }
     
@@ -117,39 +140,253 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         // Clean up timer
         navigationTimeoutTimer?.invalidate()
         navigationTimeoutTimer = nil
+        
+        // Remove notification observers
+        NotificationCenter.default.removeObserver(self)
     }
     
     private func setupUI() {
         // Set background color to match web app container (light gray)
         view.backgroundColor = PassageConstants.Colors.webViewBackground
         
-        // Add close button for reliability
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .close,
-            target: self,
-            action: #selector(closeModal)
+        // No close button - modal should be dismissed via swipe down or programmatically
+    }
+    
+    private func setupNotificationObservers() {
+        passageLogger.info("[WEBVIEW] Setting up notification observers")
+        
+        // Observe webview switching notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(showUIWebViewNotification),
+            name: .showUIWebView,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(showAutomationWebViewNotification),
+            name: .showAutomationWebView,
+            object: nil
+        )
+        
+        // Observe navigation notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(navigateInAutomationNotification(_:)),
+            name: .navigateInAutomation,
+            object: nil
+        )
+        
+        // Observe general navigation notifications (for UI webview)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(navigateNotification(_:)),
+            name: .navigate,
+            object: nil
+        )
+        
+        // Observe script injection notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(injectScriptNotification(_:)),
+            name: .injectScript,
+            object: nil
+        )
+        
+        // Observe page data request notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(getPageDataNotification(_:)),
+            name: .getPageData,
+            object: nil
+        )
+        
+        // Observe page data collection notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(collectPageDataNotification(_:)),
+            name: .collectPageData,
+            object: nil
         )
     }
     
+    @objc private func showUIWebViewNotification() {
+        passageLogger.info("[WEBVIEW] Received showUIWebView notification")
+        showUIWebView()
+    }
+    
+    @objc private func showAutomationWebViewNotification() {
+        passageLogger.info("[WEBVIEW] Received showAutomationWebView notification")
+        showAutomationWebView()
+    }
+    
+    @objc private func navigateInAutomationNotification(_ notification: Notification) {
+        guard let url = notification.userInfo?["url"] as? String else {
+            passageLogger.error("[WEBVIEW] Navigate notification missing URL")
+            return
+        }
+        let commandId = notification.userInfo?["commandId"] as? String
+        passageLogger.info("[WEBVIEW] Received navigate notification: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.debug("[WEBVIEW] Command ID: \(commandId ?? "nil")")
+        navigateInAutomationWebView(url)
+    }
+    
+    @objc private func navigateNotification(_ notification: Notification) {
+        guard let url = notification.userInfo?["url"] as? String else {
+            passageLogger.error("[WEBVIEW] Navigate notification missing URL")
+            return
+        }
+        passageLogger.info("[WEBVIEW] Received UI navigate notification: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        
+        // Navigate in UI webview with delay (like React Native WEBVIEW_SWITCH_DELAY)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.navigateInUIWebView(url)
+        }
+    }
+    
+    @objc private func injectScriptNotification(_ notification: Notification) {
+        guard let script = notification.userInfo?["script"] as? String,
+              let commandId = notification.userInfo?["commandId"] as? String else {
+            passageLogger.error("[WEBVIEW] Inject script notification missing data")
+            return
+        }
+        
+        let commandType = notification.userInfo?["commandType"] as? String ?? "unknown"
+        passageLogger.info("[WEBVIEW] Executing \(commandType) script for command: \(commandId)")
+        
+        // Check if this is an async script that uses window.passage.postMessage
+        let usesWindowPassage = script.contains("window.passage.postMessage")
+        let isAsyncScript = script.contains("async function") || commandType == "wait"
+        
+        if isAsyncScript && usesWindowPassage {
+            // For async scripts that use window.passage.postMessage, inject with "; undefined;" suffix
+            // This matches the React Native implementation
+            passageLogger.debug("[WEBVIEW] Injecting async script with window.passage.postMessage")
+            
+            let scriptWithUndefined = script + "; undefined;"
+            
+            injectJavaScriptInAutomationWebView(scriptWithUndefined) { result, error in
+                if let error = error {
+                    passageLogger.error("[WEBVIEW] Async script injection failed: \(error)")
+                    // Send error result back to remote control
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(
+                            name: .scriptExecutionResult,
+                            object: nil,
+                            userInfo: [
+                                "commandId": commandId,
+                                "success": false,
+                                "error": error.localizedDescription
+                            ]
+                        )
+                    }
+                } else {
+                    passageLogger.debug("[WEBVIEW] Async script injected successfully, waiting for result via postMessage")
+                    // Don't send result here - the script will send it via window.passage.postMessage
+                    
+                    // Set up a timeout in case the script doesn't respond
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
+                        // Check if we still haven't received a response
+                        passageLogger.warn("[WEBVIEW] Async script timeout for command: \(commandId), no postMessage received")
+                    }
+                }
+            }
+        } else {
+            // For synchronous scripts, handle normally
+            injectJavaScriptInAutomationWebView(script) { result, error in
+                if let error = error {
+                    passageLogger.error("[WEBVIEW] Script injection failed: \(error)")
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(
+                            name: .scriptExecutionResult,
+                            object: nil,
+                            userInfo: [
+                                "commandId": commandId,
+                                "success": false,
+                                "error": error.localizedDescription
+                            ]
+                        )
+                    }
+                } else {
+                    passageLogger.debug("[WEBVIEW] Script injection completed successfully")
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(
+                            name: .scriptExecutionResult,
+                            object: nil,
+                            userInfo: [
+                                "commandId": commandId,
+                                "success": true,
+                                "result": result as Any
+                            ]
+                        )
+                    }
+                }
+            }
+        }
+    }
+    
+    @objc private func getPageDataNotification(_ notification: Notification) {
+        guard let commandId = notification.userInfo?["commandId"] as? String else {
+            passageLogger.error("[WEBVIEW] Get page data notification missing commandId")
+            return
+        }
+        passageLogger.info("[WEBVIEW] Received get page data notification for command: \(commandId)")
+        // This would typically collect page data and send it back via RemoteControlManager
+        // For now, we'll let the RemoteControlManager handle this
+    }
+    
+    @objc private func collectPageDataNotification(_ notification: Notification) {
+        guard let script = notification.userInfo?["script"] as? String else {
+            passageLogger.error("[WEBVIEW] Collect page data notification missing script")
+            return
+        }
+        
+        passageLogger.info("[WEBVIEW] Collecting page data from automation webview")
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let automationWebView = self.automationWebView else {
+                passageLogger.error("[WEBVIEW] Automation webview not available for page data collection")
+                return
+            }
+            
+            automationWebView.evaluateJavaScript(script) { result, error in
+                if let error = error {
+                    passageLogger.error("[WEBVIEW] Page data collection script failed: \(error)")
+                } else {
+                    passageLogger.debug("[WEBVIEW] Page data collection script executed successfully")
+                }
+            }
+        }
+    }
+    
     private func createWebView(webViewType: String) -> WKWebView {
+        passageLogger.info("[WEBVIEW] ========== CREATING WEBVIEW ==========")
+        passageLogger.info("[WEBVIEW] WebView type: \(webViewType)")
+        passageLogger.info("[WEBVIEW] Force simple webview: \(forceSimpleWebView)")
+        passageLogger.info("[WEBVIEW] Debug URL: \(debugSingleWebViewUrl ?? "nil")")
+        
         // Create WKWebView configuration
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = WKWebsiteDataStore.default()
         
         // Enable JavaScript (required)
         configuration.preferences.javaScriptEnabled = true
+        passageLogger.debug("[WEBVIEW] JavaScript enabled: true")
         
         // Allow inline media playback
         configuration.allowsInlineMediaPlayback = true
+        passageLogger.debug("[WEBVIEW] Inline media playback allowed: true")
         
         // Keep config minimal (match Capacitor behavior for https loads)
         
         // Set up messaging — in simple mode, skip all scripts/handlers to avoid CSP/conflicts
         if !forceSimpleWebView && debugSingleWebViewUrl == nil {
+            passageLogger.info("[WEBVIEW] Setting up message handlers and scripts")
             let userContentController = WKUserContentController()
             
-            // Add message handler for modal communication
-            userContentController.add(self, name: PassageConstants.MessageHandlers.passageWebView)
+            // Add message handler for modal communication (using Capacitor-style handler name)
+            userContentController.add(self, name: PassageConstants.MessageHandlers.capacitorWebViewModal)
             
             // Inject window.passage script immediately on webview creation
             let passageScript = createPassageScript(for: webViewType)
@@ -245,6 +482,12 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     }
     
     private func setupWebViews() {
+        // Check if webviews are already created
+        if uiWebView != nil {
+            passageLogger.info("[WEBVIEW] WebViews already created, skipping setup")
+            return
+        }
+        
         // If simple mode or debugSingleWebViewUrl is set, render only one webview and load that URL
         if forceSimpleWebView || (debugSingleWebViewUrl != nil) {
             let initialUrl = debugSingleWebViewUrl
@@ -258,7 +501,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 uiWebView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
                 uiWebView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
                 uiWebView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                uiWebView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+                uiWebView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
             ])
 
             // Add debug overlay label
@@ -309,7 +552,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                         if (200...299).contains(http.statusCode) {
                             URLSession.shared.dataTask(with: testUrl) { data, _, err in
                                 if let data = data, let html = String(data: data, encoding: .utf8) {
-                                    passageLogger.debug("[DEBUG MODE] Loaded HTML bytes: \(html.count). Rendering inline for visibility test.")
+                                    passageLogger.debug("[DEBUG MODE] Loaded HTML: \(passageLogger.truncateHtml(html)). Rendering inline for visibility test.")
                                     DispatchQueue.main.async { [weak self] in
                                         self?.uiWebView?.loadHTMLString(html, baseURL: testUrl)
                                     }
@@ -351,13 +594,13 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             uiWebView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             uiWebView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             uiWebView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            uiWebView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            uiWebView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
             
             // Automation webview constraints (same as UI)
             automationWebView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             automationWebView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             automationWebView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            automationWebView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            automationWebView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
         ])
         
         // Initially show UI webview, hide automation webview
@@ -367,127 +610,298 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     }
     
     private func createPassageScript(for webViewType: String) -> String {
-        return """
-        // Passage \(webViewType.capitalized) WebView Script
-        (function() {
-          // Prevent multiple initialization
-          if (window.passage && window.passage.initialized) {
-            console.log('[Passage] Already initialized, skipping');
-            return;
-          }
-          
-          // Initialize passage object
-          window.passage = {
-            initialized: true,
-            webViewType: '\(webViewType)',
-            
-            // Core messaging functionality
-            postMessage: function(data) {
-              try {
-                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
-                  window.webkit.messageHandlers.passageWebView.postMessage({
-                    type: 'message',
-                    data: data,
-                    webViewType: '\(webViewType)',
-                    timestamp: Date.now()
-                  });
-                } else {
-                  console.warn('[Passage] Message handlers not available');
-                }
-              } catch (error) {
-                console.error('[Passage] Error posting message:', error);
+        if webViewType == PassageConstants.WebViewTypes.automation {
+            // Full script for automation webview (matches Capacitor implementation)
+            return """
+            // Passage Automation WebView Script
+            (function() {
+              console.log('[Passage] Automation webview script starting...');
+              
+              // Prevent multiple initialization
+              if (window.passage && window.passage.initialized) {
+                console.log('[Passage] Already initialized, skipping');
+                return;
               }
-            },
-            
-            // Navigation functionality
-            navigate: function(url) {
-              try {
-                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
-                  window.webkit.messageHandlers.passageWebView.postMessage({
-                    type: 'navigate',
-                    url: url,
-                    webViewType: '\(webViewType)',
-                    timestamp: Date.now()
-                  });
-                } else {
-                  console.warn('[Passage] Message handlers not available for navigation');
+              
+              // Initialize passage object for automation webview
+              console.log('[Passage] Initializing window.passage for automation webview');
+              window.passage = {
+                initialized: true,
+                webViewType: 'automation',
+                
+                // Core messaging functionality
+                postMessage: function(data) {
+                  console.log('[Passage] postMessage called with data:', data);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
+                      console.log('[Passage] Sending message via webkit handler');
+                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                        type: 'message',
+                        data: data,
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      });
+                      console.log('[Passage] Message sent successfully');
+                    } else {
+                      console.warn('[Passage] Message handlers not available');
+                      console.log('[Passage] window.webkit:', typeof window.webkit);
+                      console.log('[Passage] window.webkit.messageHandlers:', typeof window.webkit?.messageHandlers);
+                      console.log('[Passage] capacitorWebViewModal handler:', typeof window.webkit?.messageHandlers?.capacitorWebViewModal);
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error posting message:', error);
+                  }
+                },
+                
+                // Navigation functionality
+                navigate: function(url) {
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
+                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                        type: 'navigate',
+                        url: url,
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      });
+                    } else {
+                      console.warn('[Passage] Message handlers not available for navigation');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error navigating:', error);
+                  }
+                },
+                
+                // Modal control
+                close: function() {
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
+                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                        type: 'close',
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      });
+                    } else {
+                      console.warn('[Passage] Message handlers not available for close');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error closing:', error);
+                  }
+                },
+                
+                // Title management
+                setTitle: function(title) {
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
+                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                        type: 'setTitle',
+                        title: title,
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      });
+                    } else {
+                      console.warn('[Passage] Message handlers not available for setTitle');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error setting title:', error);
+                  }
+                },
+                
+                // Utility functions
+                getWebViewType: function() {
+                  return 'automation';
+                },
+                
+                isAutomationWebView: function() {
+                  return true;
+                },
+                
+                isUIWebView: function() {
+                  return false;
                 }
-              } catch (error) {
-                console.error('[Passage] Error navigating:', error);
+              };
+              
+              console.log('[Passage] Automation webview script initialized successfully');
+              console.log('[Passage] window.passage.initialized:', window.passage.initialized);
+              console.log('[Passage] window.passage.webViewType:', window.passage.webViewType);
+            })();
+            """
+        } else {
+            // Full script for UI webview (matches Capacitor implementation)
+            return """
+            // Passage UI WebView Script - Full window.passage object
+            (function() {
+              // Prevent multiple initialization
+              if (window.passage && window.passage.initialized) {
+                console.log('[Passage] Already initialized, skipping');
+                return;
               }
-            },
-            
-            // Modal control
-            close: function() {
-              try {
-                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
-                  window.webkit.messageHandlers.passageWebView.postMessage({
-                    type: 'close',
-                    webViewType: '\(webViewType)',
-                    timestamp: Date.now()
-                  });
-                } else {
-                  console.warn('[Passage] Message handlers not available for close');
+              
+              // Initialize passage object for UI webview
+              window.passage = {
+                initialized: true,
+                webViewType: 'ui',
+                
+                // Core messaging functionality
+                postMessage: function(data) {
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
+                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                        type: 'message',
+                        data: data,
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                    } else {
+                      console.warn('[Passage] Message handlers not available');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error posting message:', error);
+                  }
+                },
+                
+                // Navigation functionality
+                navigate: function(url) {
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
+                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                        type: 'navigate',
+                        url: url,
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                    } else {
+                      console.warn('[Passage] Message handlers not available for navigation');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error navigating:', error);
+                  }
+                },
+                
+                // Modal control
+                close: function() {
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
+                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                        type: 'close',
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                    } else {
+                      console.warn('[Passage] Message handlers not available for close');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error closing:', error);
+                  }
+                },
+                
+                // Title management
+                setTitle: function(title) {
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
+                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                        type: 'setTitle',
+                        title: title,
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                    } else {
+                      console.warn('[Passage] Message handlers not available for setTitle');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error setting title:', error);
+                  }
+                },
+                
+                // Utility functions
+                getWebViewType: function() {
+                  return 'ui';
+                },
+                
+                isAutomationWebView: function() {
+                  return false;
+                },
+                
+                isUIWebView: function() {
+                  return true;
                 }
-              } catch (error) {
-                console.error('[Passage] Error closing:', error);
-              }
-            },
-            
-            // Title management
-            setTitle: function(title) {
-              try {
-                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
-                  window.webkit.messageHandlers.passageWebView.postMessage({
-                    type: 'setTitle',
-                    title: title,
-                    webViewType: '\(webViewType)',
-                    timestamp: Date.now()
-                  });
-                } else {
-                  console.warn('[Passage] Message handlers not available for setTitle');
-                }
-              } catch (error) {
-                console.error('[Passage] Error setting title:', error);
-              }
-            },
-            
-            // Utility functions
-            getWebViewType: function() {
-              return '\(webViewType)';
-            },
-            
-            isAutomationWebView: function() {
-              return '\(webViewType)' === 'automation';
-            },
-            
-            isUIWebView: function() {
-              return '\(webViewType)' === 'ui';
-            }
-          };
-          
-          console.log('[Passage] \(webViewType.capitalized) webview script initialized');
-        })();
-        """
+              };
+              
+              console.log('[Passage] UI webview script initialized with full window.passage object');
+            })();
+            """
+        }
     }
     
     func loadURL(_ urlString: String) {
+        passageLogger.info("[WEBVIEW] Loading URL: \(passageLogger.truncateUrl(urlString, maxLength: 100))")
+        
         // In debug single-webview mode, ignore external loads that aren't the debug URL
         if let debugUrl = debugSingleWebViewUrl, !debugUrl.isEmpty, urlString != debugUrl {
-            passageLogger.debug("[DEBUG MODE] Ignoring external loadURL: \(passageLogger.truncateUrl(urlString, maxLength: 100)) while forcing: \(passageLogger.truncateUrl(debugUrl, maxLength: 100))")
+            passageLogger.warn("[WEBVIEW DEBUG MODE] Ignoring external URL, forcing debug URL")
             return
         }
 
         currentURL = urlString
         
-        // Match Capacitor behavior: allow loading immediately even before window is attached
+        // Validate URL
+        guard let url = URL(string: urlString) else {
+            passageLogger.error("[WEBVIEW] ❌ Invalid URL: \(urlString)")
+            return
+        }
+        
+        // Reset state for new session
+        resetForNewSession()
+        
+        // Load URL
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            if let url = URL(string: urlString) {
-                passageLogger.debug("Loading URL in WebView: \(passageLogger.truncateUrl(urlString, maxLength: 100))")
-                let request = URLRequest(url: url)
-                self.uiWebView.stopLoading()
-                self.uiWebView.load(request)
+            guard let self = self else {
+                passageLogger.error("[WEBVIEW] Self is nil in loadURL")
+                return
+            }
+            
+            guard let webView = self.uiWebView else {
+                passageLogger.error("[WEBVIEW] ❌ UI WebView is nil")
+                return
+            }
+            
+            var request = URLRequest(url: url)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.timeoutInterval = 30.0
+            
+            if webView.isLoading {
+                passageLogger.debug("[WEBVIEW] Stopping current load")
+                webView.stopLoading()
+            }
+            
+            webView.load(request)
+        }
+    }
+    
+    // Reset state for a new session when reusing webviews
+    private func resetForNewSession() {
+        passageLogger.info("[WEBVIEW] Resetting state for new session")
+        
+        // Clear pending commands
+        pendingUserActionCommand = nil
+        
+        // Clear screenshot state
+        currentScreenshot = nil
+        previousScreenshot = nil
+        
+        // Cancel any timers
+        navigationTimeoutTimer?.invalidate()
+        navigationTimeoutTimer = nil
+        
+        // Ensure we're showing UI webview
+        if !isShowingUIWebView {
+            showUIWebView()
+        }
+        
+        // Stop any loading in automation webview
+        DispatchQueue.main.async { [weak self] in
+            if let automationWebView = self?.automationWebView, automationWebView.isLoading {
+                passageLogger.debug("[WEBVIEW] Stopping automation webview loading")
+                automationWebView.stopLoading()
             }
         }
     }
@@ -525,6 +939,20 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             if let urlObj = URL(string: url) {
                 let request = URLRequest(url: urlObj)
                 self?.automationWebView?.load(request)
+            }
+        }
+    }
+    
+    // Navigate in UI webview (for success/error URLs)
+    func navigateInUIWebView(_ url: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            passageLogger.info("[WEBVIEW] Navigating UI webview to: \(passageLogger.truncateUrl(url, maxLength: 100))")
+            
+            if let urlObj = URL(string: url) {
+                let request = URLRequest(url: urlObj)
+                self.uiWebView?.load(request)
             }
         }
     }
@@ -571,8 +999,89 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     // Inject JavaScript in automation webview (for remote control)
     func injectJavaScriptInAutomationWebView(_ script: String, completion: @escaping (Any?, Error?) -> Void) {
+        injectJavaScriptInAutomationWebView(script, completion: completion, retryCount: 0)
+    }
+    
+    private func injectJavaScriptInAutomationWebView(_ script: String, completion: @escaping (Any?, Error?) -> Void, retryCount: Int) {
+        let maxRetries = 10 // Maximum 5 seconds of retries
+        
         DispatchQueue.main.async { [weak self] in
-            self?.automationWebView?.evaluateJavaScript(script, completionHandler: completion)
+            guard let self = self, let automationWebView = self.automationWebView else {
+                completion(nil, NSError(domain: "WebViewModal", code: 0, userInfo: [NSLocalizedDescriptionKey: "Automation WebView not available"]))
+                return
+            }
+            
+            // Check if the webview is still loading
+            if automationWebView.isLoading {
+                if retryCount < maxRetries {
+                    passageLogger.debug("[WEBVIEW] Automation webview is still loading (attempt \(retryCount + 1)/\(maxRetries)), waiting before script injection")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self.injectJavaScriptInAutomationWebView(script, completion: completion, retryCount: retryCount + 1)
+                    }
+                } else {
+                    passageLogger.error("[WEBVIEW] Automation webview still loading after \(maxRetries) retries, giving up")
+                    completion(nil, NSError(domain: "WebViewModal", code: 0, userInfo: [NSLocalizedDescriptionKey: "Automation WebView still loading after retries"]))
+                }
+                return
+            }
+            
+            // First check if window.passage is available before injecting the script
+            automationWebView.evaluateJavaScript("typeof window.passage !== 'undefined' && window.passage.initialized === true") { result, error in
+                if let error = error {
+                    passageLogger.error("[WEBVIEW] Error checking window.passage availability: \(error)")
+                    if retryCount < maxRetries {
+                        passageLogger.debug("[WEBVIEW] Retrying window.passage check (attempt \(retryCount + 1)/\(maxRetries))")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self.injectJavaScriptInAutomationWebView(script, completion: completion, retryCount: retryCount + 1)
+                        }
+                    } else {
+                        completion(nil, error)
+                    }
+                    return
+                }
+                
+                if let isPassageReady = result as? Bool, isPassageReady {
+                    // window.passage is ready, inject the script
+                    passageLogger.debug("[WEBVIEW] window.passage is ready, injecting script")
+                    
+                    // First, test if window.passage.postMessage works
+                    automationWebView.evaluateJavaScript("window.passage.postMessage('test-message-from-swift')") { testResult, testError in
+                        if let testError = testError {
+                            passageLogger.error("[WEBVIEW] Test postMessage failed: \(testError)")
+                        } else {
+                            passageLogger.debug("[WEBVIEW] Test postMessage sent successfully")
+                        }
+                        
+                        // Now inject the actual script
+                        automationWebView.evaluateJavaScript(script, completionHandler: completion)
+                    }
+                } else {
+                    // window.passage is not ready, try to re-inject it first
+                    if retryCount < maxRetries {
+                        passageLogger.debug("[WEBVIEW] window.passage not ready (attempt \(retryCount + 1)/\(maxRetries)), re-injecting window.passage script")
+                        passageLogger.debug("[WEBVIEW] window.passage check result: \(String(describing: result))")
+                        
+                        // Re-inject the window.passage script
+                        let passageScript = self.createPassageScript(for: PassageConstants.WebViewTypes.automation)
+                        automationWebView.evaluateJavaScript(passageScript) { passageResult, passageError in
+                            if let passageError = passageError {
+                                passageLogger.error("[WEBVIEW] Error re-injecting window.passage script: \(passageError)")
+                            } else {
+                                passageLogger.debug("[WEBVIEW] Re-injected window.passage script successfully")
+                            }
+                            
+                            // Wait a bit and try the original script injection again
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                self.injectJavaScriptInAutomationWebView(script, completion: completion, retryCount: retryCount + 1)
+                            }
+                        }
+                    } else {
+                        passageLogger.error("[WEBVIEW] window.passage not ready after \(maxRetries) retries, injecting anyway")
+                        // Try to inject anyway as a last resort
+                        automationWebView.evaluateJavaScript(script, completionHandler: completion)
+                    }
+                }
+            }
         }
     }
     
@@ -586,11 +1095,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
-            passageLogger.webView("showUIWebView called - current state: isShowingUIWebView=\(self.isShowingUIWebView), isAnimating=\(self.isAnimating)", webViewType: "ui")
-            
             // Cancel any ongoing animation
             if self.isAnimating {
-                passageLogger.webView("Cancelling ongoing animation", webViewType: "ui")
                 self.uiWebView.layer.removeAllAnimations()
                 self.automationWebView.layer.removeAllAnimations()
                 self.isAnimating = false
@@ -598,14 +1104,13 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             
             // If already showing UI webview, ensure visual state is correct
             if self.isShowingUIWebView {
-                passageLogger.webView("Already showing UI webview, forcing visual state", webViewType: "ui")
                 self.view.bringSubviewToFront(self.uiWebView)
                 self.uiWebView.alpha = 1
                 self.automationWebView.alpha = 0
                 return
             }
             
-            passageLogger.webView("Animating to UI webview", webViewType: "ui")
+            passageLogger.debug("[WEBVIEW] Switching to UI webview")
             self.isAnimating = true
             self.view.bringSubviewToFront(self.uiWebView)
             
@@ -615,7 +1120,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             }, completion: { _ in
                 self.isAnimating = false
                 self.isShowingUIWebView = true
-                passageLogger.webView("Animation to UI webview complete", webViewType: "ui")
+                self.onWebviewChange?("ui")
             })
         }
     }
@@ -625,15 +1130,12 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             guard let self = self else { return }
             // In debug single-webview mode, automation webview is not created
             if self.debugSingleWebViewUrl != nil || self.automationWebView == nil {
-                passageLogger.webView("[DEBUG MODE] Ignoring showAutomationWebView (automation webview unavailable)", webViewType: "automation")
+                passageLogger.debug("[DEBUG MODE] Ignoring showAutomationWebView (automation webview unavailable)")
                 return
             }
             
-            passageLogger.webView("showAutomationWebView called - current state: isShowingUIWebView=\(self.isShowingUIWebView), isAnimating=\(self.isAnimating)", webViewType: "automation")
-            
             // Cancel any ongoing animation
             if self.isAnimating {
-                passageLogger.webView("Cancelling ongoing animation", webViewType: "automation")
                 self.uiWebView.layer.removeAllAnimations()
                 self.automationWebView.layer.removeAllAnimations()
                 self.isAnimating = false
@@ -641,14 +1143,13 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             
             // If already showing automation webview, ensure visual state is correct
             if !self.isShowingUIWebView {
-                passageLogger.webView("Already showing automation webview, forcing visual state", webViewType: "automation")
                 self.view.bringSubviewToFront(self.automationWebView)
                 self.automationWebView.alpha = 1
                 self.uiWebView.alpha = 0
                 return
             }
             
-            passageLogger.webView("Animating to automation webview", webViewType: "automation")
+            passageLogger.debug("[WEBVIEW] Switching to automation webview")
             self.isAnimating = true
             self.view.bringSubviewToFront(self.automationWebView)
             
@@ -658,7 +1159,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             }, completion: { _ in
                 self.isAnimating = false
                 self.isShowingUIWebView = false
-                passageLogger.webView("Animation to automation webview complete", webViewType: "automation")
+                self.onWebviewChange?("automation")
             })
         }
     }
@@ -684,6 +1185,213 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     // Get current webview type
     func getCurrentWebViewType() -> String {
         return isShowingUIWebView ? PassageConstants.WebViewTypes.ui : PassageConstants.WebViewTypes.automation
+    }
+    
+    // MARK: - Screenshot Support (matching React Native implementation)
+    
+    private func setupScreenshotAccessors() {
+        guard let remoteControl = remoteControl else {
+            passageLogger.debug("[WEBVIEW] No remote control available for screenshot setup")
+            return
+        }
+        
+        // Set screenshot accessors (matching React Native implementation)
+        remoteControl.setScreenshotAccessors((
+            getCurrentScreenshot: { [weak self] in
+                return self?.currentScreenshot
+            },
+            getPreviousScreenshot: { [weak self] in
+                return self?.previousScreenshot
+            }
+        ))
+        
+        // Set capture image function
+        remoteControl.setCaptureImageFunction({ [weak self] in
+            return await self?.captureScreenshot()
+        })
+        
+        passageLogger.debug("[WEBVIEW] Screenshot accessors configured")
+    }
+    
+    private func captureScreenshot() async -> String? {
+        // Only capture screenshot if record flag is true (matching React Native)
+        guard let remoteControl = remoteControl, remoteControl.getRecordFlag() else {
+            passageLogger.debug("[WEBVIEW] Screenshot capture skipped - record flag is false")
+            return nil
+        }
+        
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                // Capture screenshot of the automation webview (where the actual content is)
+                let targetWebView = self.automationWebView ?? self.uiWebView
+                
+                guard let webView = targetWebView else {
+                    passageLogger.error("[WEBVIEW] No webview available for screenshot capture")
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                passageLogger.debug("[WEBVIEW] Capturing screenshot of \(webView == self.automationWebView ? "automation" : "ui") webview")
+                
+                // Take screenshot using WKWebView's built-in screenshot functionality
+                let config = WKSnapshotConfiguration()
+                config.rect = webView.bounds
+                
+                webView.takeSnapshot(with: config) { [weak self] image, error in
+                    if let error = error {
+                        passageLogger.error("[WEBVIEW] Screenshot capture failed: \(error)")
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    
+                    guard let image = image else {
+                        passageLogger.error("[WEBVIEW] Screenshot capture returned nil image")
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    
+                    // Convert to base64 string (matching React Native format)
+                    guard let imageData = image.pngData() else {
+                        passageLogger.error("[WEBVIEW] Failed to convert screenshot to PNG data")
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    
+                    let base64String = "data:image/png;base64," + imageData.base64EncodedString()
+                    
+                    // Update screenshot state - move current to previous, set new as current
+                    self?.previousScreenshot = self?.currentScreenshot
+                    self?.currentScreenshot = base64String
+                    
+                    passageLogger.debug("[WEBVIEW] Screenshot captured successfully: \(base64String.count) chars")
+                    
+                    continuation.resume(returning: base64String)
+                }
+            }
+        }
+    }
+    
+    // Set automation webview user agent (matches React Native implementation)
+    func setAutomationUserAgent(_ userAgent: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            passageLogger.debug("[WEBVIEW] Setting automation user agent: \(userAgent)")
+            self.automationWebView?.customUserAgent = userAgent
+        }
+    }
+    
+    // Set automation webview URL (matches React Native implementation)
+    func setAutomationUrl(_ url: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            passageLogger.debug("[WEBVIEW] Setting automation URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+            
+            if let urlObj = URL(string: url) {
+                let request = URLRequest(url: urlObj)
+                self.automationWebView?.load(request)
+            }
+        }
+    }
+    
+    // Handle navigation state changes (like React Native implementation)
+    private func handleNavigationStateChange(url: String, loading: Bool, webViewType: String) {
+        passageLogger.debug("[NAVIGATION] State change - \(webViewType): \(passageLogger.truncateUrl(url, maxLength: 100)), loading: \(loading)")
+        
+        // Send browser state update to backend and handle screenshots/reinjection when loading is complete
+        if !url.isEmpty {
+            // Only capture screenshot and reinject when loading is false (page fully loaded)
+            if !loading {
+                // Handle injectScript command reinjection for record mode
+                if webViewType == PassageConstants.WebViewTypes.automation {
+                    // Send browser state to remote control (matches React Native implementation)
+                    NotificationCenter.default.post(
+                        name: .sendBrowserState,
+                        object: nil,
+                        userInfo: ["url": url, "webViewType": webViewType]
+                    )
+                    
+                    // Call handleNavigationComplete directly (matches React Native implementation)
+                    remoteControl?.handleNavigationComplete(url)
+                    
+                    passageLogger.debug("[NAVIGATION] Page loaded for \(webViewType), checking for reinjection")
+                }
+            }
+        }
+    }
+    
+    // Handle window.passage.postMessage calls (matches React Native implementation)
+    private func handlePassageMessage(_ data: [String: Any], webViewType: String) {
+        // Handle internal messages (like React Native remote control)
+        if let commandId = data["commandId"] as? String,
+           let type = data["type"] as? String {
+            
+            passageLogger.info("[WEBVIEW] Handling passage message: \(type) for command: \(commandId)")
+            
+            switch type {
+            case "injectScript", "wait":
+                // Handle script execution result
+                let success = data["error"] == nil
+                
+                passageLogger.debug("[WEBVIEW] \(type) command result: success=\(success)")
+                
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: .scriptExecutionResult,
+                        object: nil,
+                        userInfo: [
+                            "commandId": commandId,
+                            "success": success,
+                            "result": data["value"] ?? NSNull(),
+                            "error": data["error"] as? String ?? ""
+                        ]
+                    )
+                }
+                
+            default:
+                passageLogger.debug("[WEBVIEW] Unhandled passage message type: \(type)")
+                // Forward to SDK message handler
+                onMessage?(data)
+            }
+        } else {
+            // Handle SDK messages from UI webview (like React Native implementation)
+            if webViewType == PassageConstants.WebViewTypes.ui {
+                if let messageType = data["type"] as? String {
+                    switch messageType {
+                    case "CONNECTION_SUCCESS":
+                        let connections = data["connections"] as? [[String: Any]] ?? []
+                        onMessage?([
+                            "type": "CONNECTION_SUCCESS",
+                            "connections": connections
+                        ])
+                        
+                    case "CONNECTION_ERROR":
+                        let error = data["error"] as? String ?? "Unknown error"
+                        onMessage?([
+                            "type": "CONNECTION_ERROR",
+                            "error": error
+                        ])
+                        
+                    case "CLOSE_MODAL":
+                        onMessage?(["type": "CLOSE_MODAL"])
+                        
+                    default:
+                        onMessage?(data)
+                    }
+                } else {
+                    onMessage?(data)
+                }
+            } else {
+                // Forward automation webview messages
+                onMessage?(data)
+            }
+        }
     }
     
     // MARK: - UIAdaptivePresentationControllerDelegate
@@ -748,32 +1456,25 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     }
     
     private func checkNavigationStatus(for webView: WKWebView) {
-        // Check if navigation is still in progress
-        passageLogger.debug("Checking navigation status...")
+        let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
         
-        // Check if page is loading
-        webView.evaluateJavaScript("document.readyState") { result, _ in
-            if let state = result as? String {
-                passageLogger.debug("Navigation check - Document state: \(state)")
+        passageLogger.debug("[NAVIGATION] \(webViewType) - Loading: \(webView.isLoading), Progress: \(Int(webView.estimatedProgress * 100))%")
+        
+        // Only log URL for automation webview or if there's an issue
+        if webViewType == PassageConstants.WebViewTypes.automation {
+            if let url = webView.url {
+                passageLogger.debug("[NAVIGATION] \(webViewType) URL: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
             }
         }
         
-        // Check current URL
-        if let url = webView.url {
-            passageLogger.debug("Navigation check - Current URL: \(url.absoluteString)")
-        } else {
-            passageLogger.warn("Navigation check - No URL loaded")
-        }
-        
-        // Check if page has any content
-        webView.evaluateJavaScript("document.body ? document.body.children.length : -1") { result, _ in
-            if let count = result as? Int {
-                passageLogger.debug("Navigation check - Body children count: \(count)")
+        // Only check document state if there might be an issue
+        if !webView.isLoading && webView.estimatedProgress < 1.0 {
+            webView.evaluateJavaScript("document.readyState") { result, error in
+                if let state = result as? String, state != "complete" {
+                    passageLogger.warn("[NAVIGATION] \(webViewType) document not ready: \(state)")
+                }
             }
         }
-        
-        // Check loading state
-        passageLogger.debug("Navigation check - isLoading: \(webView.isLoading)")
     }
 }
 
@@ -781,19 +1482,33 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
 extension WebViewModalViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
-        passageLogger.webView("Navigation started", webViewType: webViewType)
+        
+        if let url = webView.url {
+            passageLogger.info("[NAVIGATION] 🚀 \(webViewType) loading: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
+            
+            // Handle navigation state change (like React Native implementation)
+            handleNavigationStateChange(url: url.absoluteString, loading: true, webViewType: webViewType)
+        } else {
+            passageLogger.warn("[NAVIGATION] \(webViewType) loading with no URL")
+        }
         
         // Cancel any existing timeout timer
         navigationTimeoutTimer?.invalidate()
         
         // Start a new timeout timer (15 seconds for better UX)
         navigationTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: false) { [weak self] _ in
+            passageLogger.error("[NAVIGATION] ⏱️ TIMEOUT: \(webViewType) navigation didn't complete in 15 seconds")
             self?.handleNavigationTimeout(for: webView)
         }
         
-        // Check navigation status after 2 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            self?.checkNavigationStatus(for: webView)
+        // Check navigation status at fewer intervals and only for automation webview
+        if webViewType == PassageConstants.WebViewTypes.automation {
+            let checkIntervals: [Double] = [2.0, 5.0]
+            for interval in checkIntervals {
+                DispatchQueue.main.asyncAfter(deadline: .now() + interval) { [weak self] in
+                    self?.checkNavigationStatus(for: webView)
+                }
+            }
         }
     }
     
@@ -802,92 +1517,16 @@ extension WebViewModalViewController: WKNavigationDelegate {
         navigationTimeoutTimer?.invalidate()
         navigationTimeoutTimer = nil
         
+        let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
+        
         if let url = webView.url {
-            let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
-            passageLogger.navigation("Navigation finished: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
-            
-            // Debug: Check if page has content
-            webView.evaluateJavaScript("document.body.innerHTML.length") { result, error in
-                if let length = result as? Int {
-                    passageLogger.debug("Page content length: \(length) characters")
-                    if length < 100 {
-                        passageLogger.warn("Page appears to have very little content")
-                        // Try to get the actual content for debugging
-                        webView.evaluateJavaScript("document.body.innerHTML.substring(0, 500)") { html, _ in
-                            if let html = html as? String {
-                                passageLogger.debug("Page HTML preview: \(html)")
-                            }
-                        }
-                    }
-                } else if let error = error {
-                    passageLogger.error("Error checking page content: \(error.localizedDescription)")
-                }
-            }
-            
-            // Check document ready state
-            webView.evaluateJavaScript("document.readyState") { result, _ in
-                if let state = result as? String {
-                    passageLogger.debug("Document ready state: \(state)")
-                }
-            }
-            
-            // Check if window.passage is available
-            webView.evaluateJavaScript("typeof window.passage") { result, _ in
-                if let type = result as? String {
-                    passageLogger.debug("window.passage type: \(type)")
-                }
-            }
-            
-            // Check for any JavaScript errors
-            webView.evaluateJavaScript("window.onerror ? 'has error handler' : 'no error handler'") { result, _ in
-                if let status = result as? String {
-                    passageLogger.debug("Window error handler: \(status)")
-                }
-            }
+            passageLogger.info("[NAVIGATION] ✅ \(webViewType) loaded: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
             
             // Send delegate callback for both webviews
             delegate?.webViewModal(didNavigateTo: url)
             
-            // Inject JavaScript to notify about navigation finished
-            let navigationData = """
-            {
-                "type": "navigation_finished",
-                "url": "\(url.absoluteString)",
-                "webViewType": "\(webViewType)",
-                "timestamp": \(Date().timeIntervalSince1970 * 1000)
-            }
-            """
-            
-            let script = """
-            (function() {
-                if (window.passage && window.passage.postMessage) {
-                    console.log('[WebViewModal] Sending navigation_finished via window.passage.postMessage');
-                    window.passage.postMessage(\(navigationData));
-                } else {
-                    console.warn('[WebViewModal] window.passage.postMessage not available');
-                }
-            })();
-            """
-            
-            // Inject into the webview that finished navigation
-            webView.evaluateJavaScript(script) { result, error in
-                if let error = error {
-                    passageLogger.error("Error injecting navigation finished notification: \(error.localizedDescription)")
-                } else {
-                    passageLogger.debug("Successfully notified JavaScript about navigation finished")
-                }
-            }
-            
-            // Also send page loaded event with webview type info
-            let pageLoadedData: [String: Any] = [
-                "type": PassageConstants.MessageTypes.pageLoaded,
-                "url": url.absoluteString,
-                "timestamp": Date().timeIntervalSince1970 * 1000,
-                "webViewType": webViewType
-            ]
-            
-            // Call the onMessage handler directly
-            onMessage?(pageLoadedData)
+            // Handle navigation state change (like React Native implementation)
+            handleNavigationStateChange(url: url.absoluteString, loading: false, webViewType: webViewType)
         }
     }
     
@@ -905,7 +1544,7 @@ extension WebViewModalViewController: WKNavigationDelegate {
         navigationTimeoutTimer?.invalidate()
         navigationTimeoutTimer = nil
         
-        let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
+        let _ = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
         passageLogger.error("Provisional navigation failed: \(error.localizedDescription)")
         
         // Get the attempted URL
@@ -988,7 +1627,7 @@ extension WebViewModalViewController: WKNavigationDelegate {
 // MARK: - WKScriptMessageHandler
 extension WebViewModalViewController: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        if message.name == PassageConstants.MessageHandlers.passageWebView {
+        if message.name == PassageConstants.MessageHandlers.capacitorWebViewModal {
             if let body = message.body as? [String: Any] {
                 let type = body["type"] as? String ?? PassageConstants.MessageTypes.message
                 let webViewType = body["webViewType"] as? String ?? "unknown"
@@ -1009,6 +1648,21 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                         passageLogger.webView("Set title: \(title)", webViewType: webViewType)
                         updateTitle(title)
                     }
+                case "pageData":
+                    // Handle page data collection results
+                    passageLogger.debug("[WEBVIEW] Received page data from automation webview")
+                    if let data = body["data"] as? [String: Any] {
+                        passageLogger.debug("[WEBVIEW] Page data contains: url=\(data["url"] != nil), html=\(passageLogger.truncateHtml(data["html"] as? String)), localStorage=\((data["localStorage"] as? [Any])?.count ?? 0) items, sessionStorage=\((data["sessionStorage"] as? [Any])?.count ?? 0) items")
+                        
+                        // Forward page data to remote control
+                        remoteControl?.handlePageDataResult(data)
+                    } else if let error = body["error"] as? String {
+                        passageLogger.error("[WEBVIEW] Page data collection error: \(error)")
+                        remoteControl?.handlePageDataResult([:])
+                    } else {
+                        passageLogger.warn("[WEBVIEW] Page data message without data or error field")
+                        remoteControl?.handlePageDataResult([:])
+                    }
                 case "console_error":
                     if let errorMessage = body["message"] as? String {
                         passageLogger.error("JavaScript Console Error: \(errorMessage)")
@@ -1025,7 +1679,23 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                         passageLogger.error("  Stack: \(stack)")
                     }
                 case PassageConstants.MessageTypes.message:
-                    fallthrough
+                    // Handle window.passage.postMessage calls (matches Capacitor implementation)
+                    if let data = body["data"] {
+                        if let dataString = data as? String,
+                           let jsonData = dataString.data(using: .utf8),
+                           let parsedData = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                            // This is a JSON string from window.passage.postMessage
+                            handlePassageMessage(parsedData, webViewType: webViewType)
+                        } else if let dataDict = data as? [String: Any] {
+                            // This is already a dictionary
+                            handlePassageMessage(dataDict, webViewType: webViewType)
+                        } else {
+                            // Fallback to original behavior
+                            onMessage?(data)
+                        }
+                    } else {
+                        onMessage?(body)
+                    }
                 default:
                     let messageData = body["data"] ?? body
                     onMessage?(messageData)

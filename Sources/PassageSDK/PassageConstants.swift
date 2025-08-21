@@ -42,6 +42,7 @@ public enum PassageConstants {
     // WebView message handler names
     public enum MessageHandlers {
         static let passageWebView = "passageWebView"
+        static let capacitorWebViewModal = "capacitorWebViewModal"
     }
     
     // WebView identifiers
@@ -52,12 +53,12 @@ public enum PassageConstants {
     
     // Default values
     public enum Defaults {
-        static let modalTitle = ""
-        static let showGrabber = false
-        static let baseUrl = "https://ui.getpassage.ai"
-        static let socketUrl = "https://api.getpassage.ai"
-        static let socketNamespace = "/ws"
-        static let loggerEndpoint = "https://ui.getpassage.ai/api/logger"
+        public static let modalTitle = ""
+        public static let showGrabber = false
+        public static let baseUrl = "https://ui.getpassage.ai"
+        public static let socketUrl = "https://api.getpassage.ai"
+        public static let socketNamespace = "/ws"
+        public static let loggerEndpoint = "https://ui.getpassage.ai/api/logger"
     }
     
     // Error domains
@@ -67,6 +68,7 @@ public enum PassageConstants {
     
     // URL schemes for local content validation
     public enum URLSchemes {
+        static let capacitor = "capacitor://"
         static let httpLocalhost = "http://localhost"
         static let httpLocal = "http://192.168"
     }

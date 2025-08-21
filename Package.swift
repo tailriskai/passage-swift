@@ -14,7 +14,7 @@ let package = Package(
             targets: ["PassageSDK"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/socketio/socket.io-client-swift", from: "16.0.0")
+        .package(url: "https://github.com/socketio/socket.io-client-swift", from: "16.1.1")
     ],
     targets: [
         .target(

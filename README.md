@@ -51,13 +51,13 @@ let config = PassageConfig(
     debug: true                              // Enable debug logging
 )
 
-PassageSDK.shared.configure(config)
+Passage.shared.configure(config)
 ```
 
 ### 2. Open a Connection
 
 ```swift
-PassageSDK.shared.open(
+Passage.shared.open(
     token: "your_intent_token",
     presentationStyle: .modal,
     from: viewController,
@@ -97,6 +97,8 @@ public class PassageSDK {
     )
 
     public func close()
+
+    public func releaseResources() // Force cleanup of all WebView resources
 }
 ```
 
@@ -148,7 +150,7 @@ public enum PassagePresentationStyle {
 
 ```swift
 // Get cookies for a URL
-PassageSDK.shared.getCookies(for: "https://example.com") { cookies in
+Passage.shared.getCookies(for: "https://example.com") { cookies in
     for cookie in cookies {
         print("\(cookie.name): \(cookie.value)")
     }
@@ -161,17 +163,17 @@ let cookie = HTTPCookie(properties: [
     .domain: ".example.com",
     .path: "/"
 ])!
-PassageSDK.shared.setCookie(cookie)
+Passage.shared.setCookie(cookie)
 
 // Clear cookies
-PassageSDK.shared.clearCookies(for: "https://example.com")
+Passage.shared.clearCookies(for: "https://example.com")
 ```
 
 ### JavaScript Injection
 
 ```swift
 let script = "document.title"
-PassageSDK.shared.injectJavaScript(script) { result, error in
+Passage.shared.injectJavaScript(script) { result, error in
     if let title = result as? String {
         print("Page title: \(title)")
     }
@@ -182,11 +184,11 @@ PassageSDK.shared.injectJavaScript(script) { result, error in
 
 ```swift
 // Navigate to a URL
-PassageSDK.shared.navigate(to: "https://example.com")
+Passage.shared.navigate(to: "https://example.com")
 
 // Browser navigation
-PassageSDK.shared.goBack()
-PassageSDK.shared.goForward()
+Passage.shared.goBack()
+Passage.shared.goForward()
 ```
 
 ## Debug Logging
@@ -195,7 +197,7 @@ Enable debug logging to see detailed SDK operations:
 
 ```swift
 let config = PassageConfig(debug: true)
-PassageSDK.shared.configure(config)
+Passage.shared.configure(config)
 ```
 
 Log levels:
@@ -229,6 +231,21 @@ The SDK uses a dual WebView architecture:
 2. **Automation WebView**: Runs automation scripts in the background
 
 This allows for seamless user interactions while automation runs in the background when needed.
+
+### WebView Lifecycle Management
+
+The SDK efficiently manages WebView resources to optimize performance:
+
+- **Lazy Initialization**: WebViews are created only when first needed
+- **Resource Reuse**: WebViews are preserved between sessions and reused for subsequent connections
+- **Automatic State Reset**: Each new session automatically resets WebView state while preserving the instances
+- **Manual Cleanup**: Call `releaseResources()` to force cleanup if needed (e.g., for memory management)
+
+This approach provides:
+
+- ⚡ Faster subsequent connection launches
+- 💾 Efficient memory usage
+- 🔄 Clean state for each new session
 
 ## Security
 
