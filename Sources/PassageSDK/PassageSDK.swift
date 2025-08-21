@@ -757,7 +757,85 @@ extension Passage: WebViewModalDelegate {
             handler(.success(url.absoluteString))
         }
     }
+    
+    // MARK: - Recording Methods (matching React Native SDK)
+    
+    /// Complete recording session with optional data
+    /// Matches React Native SDK completeRecording method
+    public func completeRecording(data: [String: Any]? = nil) async throws {
+        passageLogger.debug("[SDK] completeRecording called with data: \(data != nil)")
+        
+        guard let remoteControl = remoteControl else {
+            passageLogger.error("[SDK] completeRecording failed - no remote control available")
+            throw PassageError.noRemoteControl
+        }
+        
+        // Call the remote control's complete recording method
+        await remoteControl.completeRecording(data: data ?? [:])
+        passageLogger.info("[SDK] completeRecording completed successfully")
+    }
+    
+    /// Capture recording data without completing the session
+    /// Matches React Native SDK captureRecordingData method
+    public func captureRecordingData(data: [String: Any]? = nil) async throws {
+        passageLogger.debug("[SDK] captureRecordingData called with data: \(data != nil)")
+        
+        guard let remoteControl = remoteControl else {
+            passageLogger.error("[SDK] captureRecordingData failed - no remote control available")
+            throw PassageError.noRemoteControl
+        }
+        
+        // Call the remote control's capture recording data method
+        await remoteControl.captureRecordingData(data: data ?? [:])
+        passageLogger.info("[SDK] captureRecordingData completed successfully")
+    }
+    
+    /// Complete recording session with optional data (completion handler version for Objective-C compatibility)
+    /// Matches React Native SDK completeRecording method
+    public func completeRecording(data: [String: Any]? = nil, completionHandler: @escaping (Error?) -> Void) {
+        Task {
+            do {
+                try await completeRecording(data: data)
+                completionHandler(nil)
+            } catch {
+                completionHandler(error)
+            }
+        }
+    }
+    
+    /// Capture recording data without completing the session (completion handler version for Objective-C compatibility)
+    /// Matches React Native SDK captureRecordingData method
+    public func captureRecordingData(data: [String: Any]? = nil, completionHandler: @escaping (Error?) -> Void) {
+        Task {
+            do {
+                try await captureRecordingData(data: data)
+                completionHandler(nil)
+            } catch {
+                completionHandler(error)
+            }
+        }
+    }
 }
+
+// MARK: - Passage Errors
+
+public enum PassageError: Error, LocalizedError {
+    case noRemoteControl
+    case invalidConfiguration
+    case recordingFailed(String)
+    
+    public var errorDescription: String? {
+        switch self {
+        case .noRemoteControl:
+            return "Remote control is not available. Make sure Passage is properly configured."
+        case .invalidConfiguration:
+            return "Invalid Passage configuration."
+        case .recordingFailed(let message):
+            return "Recording failed: \(message)"
+        }
+    }
+}
+
 #endif
 
 // MARK: - Cross-Platform Core

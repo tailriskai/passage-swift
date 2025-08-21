@@ -1341,6 +1341,88 @@ class RemoteControlManager {
         return (connectionData, connectionId)
     }
     
+    // MARK: - Recording Methods (matching React Native SDK)
+    
+    /// Complete recording session with optional data
+    /// Matches React Native SDK completeRecording method
+    func completeRecording(data: [String: Any]) async {
+        passageLogger.debug("[REMOTE CONTROL] completeRecording called with data: \(data)")
+        
+        guard let currentCommand = currentCommand else {
+            passageLogger.error("[REMOTE CONTROL] No current command available to complete")
+            return
+        }
+        
+        passageLogger.debug("[REMOTE CONTROL] Completing recording for command: \(currentCommand.id)")
+        
+        // Collect page data with screenshot if record flag is enabled
+        await withCheckedContinuation { continuation in
+            getPageData { pageData in
+                // Send done result with success status
+                let result = CommandResult(
+                    id: currentCommand.id,
+                    status: "done",
+                    data: AnyCodable(data),
+                    pageData: pageData,
+                    error: nil
+                )
+                
+                Task {
+                    await self.sendResult(result)
+                    
+                    // Call success callback if available
+                    if let onSuccess = self.onSuccess,
+                       let connectionData = self.connectionData,
+                       let connectionId = self.connectionId {
+                        let successData = PassageSuccessData(
+                            history: connectionData.compactMap { item in
+                                PassageHistoryItem(structuredData: item, additionalData: [:])
+                            },
+                            connectionId: connectionId
+                        )
+                        onSuccess(successData)
+                    }
+                    
+                    passageLogger.info("[REMOTE CONTROL] Recording completed successfully")
+                    continuation.resume()
+                }
+            }
+        }
+    }
+    
+    /// Capture recording data without completing the session
+    /// Matches React Native SDK captureRecordingData method
+    func captureRecordingData(data: [String: Any]) async {
+        passageLogger.debug("[REMOTE CONTROL] captureRecordingData called with data: \(data)")
+        
+        guard let currentCommand = currentCommand else {
+            passageLogger.error("[REMOTE CONTROL] No current command available to capture")
+            return
+        }
+        
+        passageLogger.debug("[REMOTE CONTROL] Capturing recording data for command: \(currentCommand.id)")
+        
+        // Collect page data with screenshot if record flag is enabled
+        await withCheckedContinuation { continuation in
+            getPageData { pageData in
+                // Send success result (not done, so session continues)
+                let result = CommandResult(
+                    id: currentCommand.id,
+                    status: "success",
+                    data: AnyCodable(data),
+                    pageData: pageData,
+                    error: nil
+                )
+                
+                Task {
+                    await self.sendResult(result)
+                    passageLogger.info("[REMOTE CONTROL] Recording data captured successfully")
+                    continuation.resume()
+                }
+            }
+        }
+    }
+    
     func disconnect() {
         passageLogger.info("[REMOTE CONTROL] ========== DISCONNECTING ==========")
         passageLogger.info("[REMOTE CONTROL] Current connection state: \(isConnected)")
