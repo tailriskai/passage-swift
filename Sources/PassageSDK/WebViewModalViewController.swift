@@ -1,3 +1,4 @@
+#if canImport(UIKit)
 import UIKit
 @preconcurrency import WebKit
 
@@ -1707,3 +1708,4 @@ extension WebViewModalViewController: WKScriptMessageHandler {
         }
     }
 }
+#endif

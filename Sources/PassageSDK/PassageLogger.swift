@@ -246,7 +246,7 @@ public class PassageLogger {
     
     // Format message with timestamp and level
     private func formatMessage(_ level: PassageLogLevel, _ message: String, file: String = #file, function: String = #function, line: Int = #line) -> String {
-        let timestamp = DateFormatter.logFormatter.string(from: Date())
+        let _ = DateFormatter.logFormatter.string(from: Date())
         let fileName = URL(fileURLWithPath: file).lastPathComponent
         let location = "[\(fileName):\(line) \(function)]"
         

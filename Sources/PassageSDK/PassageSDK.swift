@@ -1,6 +1,8 @@
 import Foundation
+#if canImport(UIKit)
 import UIKit
 import WebKit
+#endif
 
 // MARK: - Public Types
 
@@ -91,6 +93,7 @@ public struct PassageInitializeOptions {
     }
 }
 
+#if canImport(UIKit)
 public struct PassageOpenOptions {
     public let intentToken: String?
     public let prompts: [PassagePrompt]?
@@ -124,7 +127,9 @@ public struct PassageOpenOptions {
         self.presentationStyle = presentationStyle
     }
 }
+#endif
 
+#if canImport(UIKit)
 public enum PassagePresentationStyle {
     case modal
     case fullScreen
@@ -138,9 +143,11 @@ public enum PassagePresentationStyle {
         }
     }
 }
+#endif
 
 // MARK: - PassageSDK
 
+#if canImport(UIKit)
 public class Passage: NSObject {
     // Singleton instance
     public static let shared = Passage()
@@ -728,3 +735,57 @@ extension Passage: WebViewModalDelegate {
         }
     }
 }
+#endif
+
+// MARK: - Cross-Platform Core
+
+/// Core Passage functionality available on all platforms
+public class PassageCore {
+    // Singleton instance
+    public static let shared = PassageCore()
+    
+    // Configuration
+    private var config: PassageConfig
+    
+    // Analytics and logging are available on all platforms
+    public let analytics = PassageAnalytics.shared
+    public let logger = PassageLogger.shared
+    
+    private init() {
+        self.config = PassageConfig()
+        
+        // Configure analytics with SDK version
+        analytics.configure(.default, sdkVersion: sdkVersion)
+        
+        passageLogger.info("[SDK] PassageCore initialized (cross-platform)")
+    }
+    
+    public func configure(_ config: PassageConfig) {
+        self.config = config
+        
+        // Configure logger
+        logger.configure(debug: config.debug)
+        
+        // Update analytics configuration
+        analytics.configure(.default, sdkVersion: sdkVersion)
+        
+        passageLogger.info("[SDK] PassageCore configured - baseUrl: \(config.baseUrl)")
+    }
+    
+    public var sdkVersion: String {
+        return "0.0.1"
+    }
+    
+    public func cleanup() {
+        analytics.cleanup()
+        passageLogger.info("[SDK] PassageCore cleanup completed")
+    }
+}
+
+#if canImport(UIKit)
+// Convenience alias for iOS - maintains backward compatibility
+public typealias PassageClient = Passage
+#else
+// On non-iOS platforms, use the core functionality
+public typealias PassageClient = PassageCore
+#endif

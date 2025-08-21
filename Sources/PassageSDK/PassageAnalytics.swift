@@ -1,5 +1,64 @@
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
+#if canImport(AppKit)
+import AppKit
+#endif
+#if canImport(WatchKit)
+import WatchKit
+#endif
+
+// MARK: - AnyCodable Implementation
+
+public struct AnyCodable: Codable {
+    public let value: Any
+    
+    public init(_ value: Any) {
+        self.value = value
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        
+        if let bool = try? container.decode(Bool.self) {
+            self.value = bool
+        } else if let int = try? container.decode(Int.self) {
+            self.value = int
+        } else if let double = try? container.decode(Double.self) {
+            self.value = double
+        } else if let string = try? container.decode(String.self) {
+            self.value = string
+        } else if let array = try? container.decode([AnyCodable].self) {
+            self.value = array.map { $0.value }
+        } else if let dictionary = try? container.decode([String: AnyCodable].self) {
+            self.value = dictionary.mapValues { $0.value }
+        } else {
+            self.value = NSNull()
+        }
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        
+        switch value {
+        case let bool as Bool:
+            try container.encode(bool)
+        case let int as Int:
+            try container.encode(int)
+        case let double as Double:
+            try container.encode(double)
+        case let string as String:
+            try container.encode(string)
+        case let array as [Any]:
+            try container.encode(array.map { AnyCodable($0) })
+        case let dictionary as [String: Any]:
+            try container.encode(dictionary.mapValues { AnyCodable($0) })
+        default:
+            try container.encodeNil()
+        }
+    }
+}
 
 /**
  * Analytics module for Passage Swift SDK
@@ -47,14 +106,26 @@ public enum PassageAnalyticsEvent: String, CaseIterable {
 
 public struct PassageAnalyticsPayload: Codable {
     let event: String
-    let source: String = "sdk"
+    let source: String
     let sdkName: String
     let sdkVersion: String?
     let sessionId: String?
     let timestamp: String
     let metadata: [String: AnyCodable]?
-    let platform: String = "ios"
+    let platform: String
     let deviceInfo: [String: String]?
+    
+    init(event: String, sdkName: String, sdkVersion: String?, sessionId: String?, timestamp: String, metadata: [String: AnyCodable]?, deviceInfo: [String: String]?) {
+        self.event = event
+        self.source = "sdk"
+        self.sdkName = sdkName
+        self.sdkVersion = sdkVersion
+        self.sessionId = sessionId
+        self.timestamp = timestamp
+        self.metadata = metadata
+        self.platform = "sdk"
+        self.deviceInfo = deviceInfo
+    }
 }
 
 // MARK: - Analytics Configuration
@@ -96,7 +167,10 @@ public class PassageAnalytics {
     // Device info cache
     private lazy var deviceInfo: [String: String] = {
         var info: [String: String] = [:]
+        
+        // Cross-platform device information
         #if canImport(UIKit)
+        // iOS/iPadOS/tvOS
         info["model"] = UIDevice.current.model
         info["systemName"] = UIDevice.current.systemName
         info["systemVersion"] = UIDevice.current.systemVersion
@@ -104,18 +178,46 @@ public class PassageAnalytics {
         if let name = UIDevice.current.name as String? {
             info["name"] = name
         }
-        // Add app info
+        info["platform"] = "ios"
+        #elseif canImport(AppKit)
+        // macOS
+        info["model"] = "Mac"
+        info["systemName"] = "macOS"
+        info["systemVersion"] = ProcessInfo.processInfo.operatingSystemVersionString
+        info["platform"] = "macos"
+        #elseif canImport(WatchKit)
+        // watchOS
+        info["model"] = WKInterfaceDevice.current().model
+        info["systemName"] = WKInterfaceDevice.current().systemName
+        info["systemVersion"] = WKInterfaceDevice.current().systemVersion
+        info["platform"] = "watchos"
+        #else
+        // Fallback for other platforms
+        info["platform"] = "unknown"
+        info["systemName"] = "Unknown"
+        info["systemVersion"] = ProcessInfo.processInfo.operatingSystemVersionString
+        #endif
+        
+        // Add app info (available on all platforms)
         if let bundle = Bundle.main.infoDictionary {
             info["appVersion"] = bundle["CFBundleShortVersionString"] as? String
             info["appBuild"] = bundle["CFBundleVersion"] as? String
             info["appBundleId"] = bundle["CFBundleIdentifier"] as? String
         }
-        #endif
+        
         return info
     }()
     
     private lazy var sdkName: String = {
+        #if canImport(UIKit)
         return "swift-ios"
+        #elseif canImport(AppKit)
+        return "swift-macos"
+        #elseif canImport(WatchKit)
+        return "swift-watchos"
+        #else
+        return "swift-unknown"
+        #endif
     }()
     
     private init() {
@@ -342,6 +444,7 @@ public class PassageAnalytics {
     
     private func setupAppStateObservers() {
         #if canImport(UIKit)
+        // iOS/iPadOS/tvOS
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(appDidEnterBackground),
@@ -355,6 +458,14 @@ public class PassageAnalytics {
             name: UIApplication.willTerminateNotification,
             object: nil
         )
+        #elseif canImport(AppKit)
+        // macOS
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillTerminate),
+            name: NSApplication.willTerminateNotification,
+            object: nil
+        )
         #endif
     }
     
@@ -363,6 +474,10 @@ public class PassageAnalytics {
         flushEvents()
     }
     
+    @objc private func appWillTerminate() {
+        flushEvents()
+    }
+    #elseif canImport(AppKit)
     @objc private func appWillTerminate() {
         flushEvents()
     }
