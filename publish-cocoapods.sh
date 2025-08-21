@@ -225,7 +225,7 @@ if [ "$DRY_RUN" = false ]; then
     fi
     
     print_info "Publishing to CocoaPods trunk..."
-    if pod trunk push PassageSDK.podspec --allow-warnings --sources='https://cdn.cocoapods.org/' --use-libraries; then
+    if pod trunk push PassageSDK.podspec --allow-warnings --use-libraries; then
         print_success "Successfully published to CocoaPods!"
     else
         print_error "Failed to publish to CocoaPods"

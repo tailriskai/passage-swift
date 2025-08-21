@@ -1,0 +1,12 @@
+# Uncomment the next line to define a global platform for your project
+platform :ios, '13.0'
+
+target 'PassageExampleCocoaPods' do
+  # Comment the next line if you don't want to use dynamic frameworks
+  use_frameworks!
+
+  # Pods for PassageExampleCocoaPods
+  # Using git source since the pod might not be indexed in trunk yet
+  pod 'PassageSDK', :git => 'https://github.com/tailriskai/passage-swift.git', :tag => 'v0.0.1'
+
+end

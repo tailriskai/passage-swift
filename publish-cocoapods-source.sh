@@ -179,7 +179,7 @@ if [ "$DRY_RUN" = false ]; then
     fi
     
     print_info "Publishing to CocoaPods trunk..."
-    if pod trunk push "$PODSPEC_FILE" --allow-warnings --sources='https://cdn.cocoapods.org/'; then
+    if pod trunk push "$PODSPEC_FILE" --allow-warnings; then
         print_success "Successfully published to CocoaPods!"
     else
         print_error "Failed to publish to CocoaPods"

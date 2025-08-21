@@ -7,11 +7,12 @@ class ViewController: UIViewController {
     private var titleLabel: UILabel!
     private var connectButton: UIButton!
     private var resultTextView: UITextView!
+    private var versionLabel: UILabel!
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        print("========== EXAMPLE APP STARTING ==========")
+        print("========== COCOAPODS EXAMPLE APP STARTING ==========")
         print("View controller loaded")
         
         // Configure Passage SDK with debug mode
@@ -45,11 +46,21 @@ class ViewController: UIViewController {
         
         // Title Label
         titleLabel = UILabel()
-        titleLabel.text = "Passage SDK Example"
+        titleLabel.text = "Passage SDK CocoaPods Example"
         titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
         titleLabel.textAlignment = .center
+        titleLabel.numberOfLines = 0
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(titleLabel)
+        
+        // Version Label
+        versionLabel = UILabel()
+        versionLabel.text = "Installed via CocoaPods"
+        versionLabel.font = .systemFont(ofSize: 16, weight: .medium)
+        versionLabel.textAlignment = .center
+        versionLabel.textColor = .systemBlue
+        versionLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(versionLabel)
         
         // Connect Button
         connectButton = UIButton(type: .system)
@@ -73,8 +84,6 @@ class ViewController: UIViewController {
         resultTextView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(resultTextView)
         
-
-        
         // Set up constraints
         NSLayoutConstraint.activate([
             // Title Label
@@ -82,8 +91,13 @@ class ViewController: UIViewController {
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             
+            // Version Label
+            versionLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 10),
+            versionLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            versionLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            
             // Connect Button
-            connectButton.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 40),
+            connectButton.topAnchor.constraint(equalTo: versionLabel.bottomAnchor, constant: 40),
             connectButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             connectButton.widthAnchor.constraint(equalToConstant: 200),
             connectButton.heightAnchor.constraint(equalToConstant: 50),
@@ -96,16 +110,14 @@ class ViewController: UIViewController {
         ])
     }
     
-
-    
     @objc private func connectButtonTapped() {
-        print("\n========== CONNECT BUTTON TAPPED ==========")
+        print("\n========== CONNECT BUTTON TAPPED (CocoaPods) ==========")
         print("Current time: \(Date())")
         
         // Disable button and show loading state
         connectButton.isEnabled = false
         connectButton.setTitle("Fetching token...", for: .normal)
-        resultTextView.text = "Fetching intent token...\n\nCheck console logs for detailed debugging information."
+        resultTextView.text = "Fetching intent token...\n\nCheck console logs for detailed debugging information.\n\nThis example uses PassageSDK installed via CocoaPods."
         
         // Fetch intent token from API
         fetchIntentToken { [weak self] result in
@@ -114,7 +126,7 @@ class ViewController: UIViewController {
                 case .success(let intentToken):
                     print("Successfully fetched intent token")
                     self?.connectButton.setTitle("Opening Passage...", for: .normal)
-                    self?.resultTextView.text = "Opening Passage...\n\nCheck console logs for detailed debugging information."
+                    self?.resultTextView.text = "Opening Passage...\n\nCheck console logs for detailed debugging information.\n\nThis example uses PassageSDK installed via CocoaPods."
                     
                     // Parse JWT to check details
                     self?.logTokenDetails(intentToken)
@@ -125,7 +137,7 @@ class ViewController: UIViewController {
                     print("Failed to fetch intent token: \(error)")
                     self?.connectButton.isEnabled = true
                     self?.connectButton.setTitle("Connect", for: .normal)
-                    self?.resultTextView.text = "❌ Failed to fetch intent token:\n\n\(error.localizedDescription)"
+                    self?.resultTextView.text = "❌ Failed to fetch intent token:\n\n\(error.localizedDescription)\n\nThis example uses PassageSDK installed via CocoaPods."
                 }
             }
         }
@@ -262,41 +274,8 @@ class ViewController: UIViewController {
     }
     
     private func openPassage(with token: String) {
-        print("\n========== OPENING PASSAGE SDK ==========")
+        print("\n========== OPENING PASSAGE SDK (CocoaPods) ==========")
         print("Calling Passage.shared.open")
-        
-        // Alternative approach using PassageOpenOptions (React Native style):
-        /*
-        let options = PassageOpenOptions(
-            intentToken: token,
-            onConnectionComplete: { [weak self] (data: PassageSuccessData) in
-                print("\n✅ CONNECTION COMPLETE CALLBACK TRIGGERED")
-                self?.handleSuccess(data)
-            },
-            onConnectionError: { [weak self] (error: PassageErrorData) in
-                print("\n❌ CONNECTION ERROR CALLBACK TRIGGERED")
-                self?.handleError(error)
-            },
-            onDataComplete: { [weak self] (data: PassageDataResult) in
-                print("\n📊 DATA COMPLETE CALLBACK TRIGGERED")
-                self?.handleDataComplete(data)
-            },
-            onPromptComplete: { [weak self] (prompt: PassagePromptResponse) in
-                print("\n🎯 PROMPT COMPLETE CALLBACK TRIGGERED")
-                self?.handlePromptComplete(prompt)
-            },
-            onExit: { [weak self] (reason: String?) in
-                print("\n🚪 EXIT CALLBACK TRIGGERED - Reason: \(reason ?? "unknown")")
-                self?.handleClose()
-            },
-            onWebviewChange: { [weak self] (webviewType: String) in
-                print("\n🔄 WEBVIEW CHANGE CALLBACK TRIGGERED - Type: \(webviewType)")
-                self?.handleWebviewChange(webviewType)
-            },
-            presentationStyle: .modal
-        )
-        Passage.shared.open(options, from: self)
-        */
         
         // Current approach using individual parameters:
         Passage.shared.open(
@@ -388,13 +367,14 @@ class ViewController: UIViewController {
             self?.connectButton.isEnabled = true
             self?.connectButton.setTitle("Connect", for: .normal)
             if self?.resultTextView.text == "Opening Passage..." || self?.resultTextView.text?.contains("Automation Active") == true {
-                self?.resultTextView.text = "Passage closed"
+                self?.resultTextView.text = "Passage closed\n\nThis example uses PassageSDK installed via CocoaPods."
             }
         }
     }
     
     private func displayResult(_ message: Any, isError: Bool) {
         var resultText = ""
+        let cocoapodsNote = "\n\n--- CocoaPods Installation ---\nThis example uses PassageSDK installed via CocoaPods."
         
         if isError {
             resultText = "❌ Error:\n\n"
@@ -477,6 +457,6 @@ class ViewController: UIViewController {
             }
         }
         
-        resultTextView.text = resultText
+        resultTextView.text = resultText + cocoapodsNote
     }
 }
