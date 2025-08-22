@@ -201,7 +201,7 @@ class ViewController: UIViewController {
         
         // Create request body with kruger integration
         let requestBody: [String: Any] = [
-            "integrationId": "netflix"
+            "integrationId": "kroger"
         ]
         
         do {

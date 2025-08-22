@@ -170,6 +170,7 @@ public class Passage: NSObject {
     private var onPromptComplete: ((PassagePromptResponse) -> Void)?
     private var onExit: ((String?) -> Void)?
     private var onWebviewChange: ((String) -> Void)?
+    private var lastWebviewType: String = PassageConstants.WebViewTypes.ui
     
     // MARK: - Initialization
     
@@ -208,12 +209,21 @@ public class Passage: NSObject {
         
         // Configure logger with unified debug flag and auto-detected SDK version
         passageLogger.configure(debug: config.debug, sdkVersion: sdkVersion)
+        // Configure analytics and track configure lifecycle
+        passageAnalytics.configure(.default, sdkVersion: sdkVersion)
+        passageAnalytics.trackConfigureStart()
         passageLogger.debugMethod("configure", params: [
             "baseUrl": config.baseUrl,
             "socketUrl": config.socketUrl,
             "socketNamespace": config.socketNamespace,
             "debug": config.debug,
             "sdkVersion": sdkVersion
+        ])
+        passageAnalytics.trackConfigureSuccess(config: [
+            "baseUrl": config.baseUrl,
+            "socketUrl": config.socketUrl,
+            "socketNamespace": config.socketNamespace,
+            "debug": config.debug
         ])
         
         // Initialize remote control if needed
@@ -265,6 +275,7 @@ public class Passage: NSObject {
     ) {
         passageLogger.info("[SDK] Opening Passage")
         passageLogger.debug("[SDK] Token length: \(token.count), Style: \(presentationStyle)")
+        passageAnalytics.trackOpenRequest(token: token)
         
         // Store callbacks
         self.onConnectionComplete = onConnectionComplete
@@ -289,6 +300,7 @@ public class Passage: NSObject {
                 let error = PassageErrorData(error: "No view controller available", data: nil)
                 passageLogger.error("[SDK] ❌ No view controller available for presentation")
                 self.onConnectionError?(error)
+                passageAnalytics.trackOpenError(error: "No view controller available", context: "presentation")
                 return
             }
             
@@ -331,6 +343,8 @@ public class Passage: NSObject {
             webVC.titleText = PassageConstants.Defaults.modalTitle
             
             passageLogger.debug("[SDK] WebView configured with URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+            let styleString = (presentationStyle == .modal) ? PassageConstants.PresentationStyles.pageSheet : PassageConstants.PresentationStyles.fullScreen
+            passageAnalytics.trackModalOpened(presentationStyle: styleString, url: url)
             
             // Create navigation controller if needed
             if self.navigationController == nil || self.navigationController?.viewControllers.first !== webVC {
@@ -361,6 +375,7 @@ public class Passage: NSObject {
             presentingVC.present(self.navigationController!, animated: true) {
                 // Initialize remote control if needed
                 self.initializeRemoteControl(with: token)
+                passageAnalytics.trackOpenSuccess(url: url)
             }
         }
     }
@@ -487,6 +502,7 @@ public class Passage: NSObject {
         
         // Extract session ID from token
         passageLogger.updateIntentToken(token)
+        passageAnalytics.updateSessionInfo(intentToken: token, sessionId: nil)
         
         // Set configuration callback to handle user agent and integration URL (matches React Native)
         remoteControl.setConfigurationCallback { [weak self] userAgent, integrationUrl in
@@ -605,6 +621,7 @@ public class Passage: NSObject {
         
         passageLogger.info("[SDK] Final success data - history: \(history.count) items, connectionId: \(connectionId)")
         onConnectionComplete?(successData)
+        passageAnalytics.trackOnSuccess(historyCount: history.count, connectionId: connectionId)
         
         // Also trigger onDataComplete if we have data
         if !history.isEmpty {
@@ -615,6 +632,7 @@ public class Passage: NSObject {
             onDataComplete?(dataResult)
         }
         
+        passageAnalytics.trackModalClosed(reason: "success")
         navigationController?.dismiss(animated: true) {
             self.cleanupAfterClose()
         }
@@ -625,6 +643,8 @@ public class Passage: NSObject {
         let errorData = PassageErrorData(error: error, data: data)
         
         onConnectionError?(errorData)
+        passageAnalytics.trackOnError(error: error, data: data)
+        passageAnalytics.trackModalClosed(reason: "error")
         navigationController?.dismiss(animated: true) {
             self.cleanupAfterClose()
         }
@@ -632,11 +652,14 @@ public class Passage: NSObject {
     
     private func handleClose() {
         onExit?("user_action")
+        passageAnalytics.trackModalClosed(reason: "user_action")
         cleanupAfterClose()
     }
     
     private func handleWebviewChange(_ webviewType: String) {
         passageLogger.debug("[SDK] Webview changed to: \(webviewType)")
+        passageAnalytics.trackWebViewSwitch(from: lastWebviewType, to: webviewType, reason: "remote_control")
+        lastWebviewType = webviewType
         onWebviewChange?(webviewType)
     }
     
@@ -734,7 +757,85 @@ extension Passage: WebViewModalDelegate {
             handler(.success(url.absoluteString))
         }
     }
+    
+    // MARK: - Recording Methods (matching React Native SDK)
+    
+    /// Complete recording session with optional data
+    /// Matches React Native SDK completeRecording method
+    public func completeRecording(data: [String: Any]? = nil) async throws {
+        passageLogger.debug("[SDK] completeRecording called with data: \(data != nil)")
+        
+        guard let remoteControl = remoteControl else {
+            passageLogger.error("[SDK] completeRecording failed - no remote control available")
+            throw PassageError.noRemoteControl
+        }
+        
+        // Call the remote control's complete recording method
+        await remoteControl.completeRecording(data: data ?? [:])
+        passageLogger.info("[SDK] completeRecording completed successfully")
+    }
+    
+    /// Capture recording data without completing the session
+    /// Matches React Native SDK captureRecordingData method
+    public func captureRecordingData(data: [String: Any]? = nil) async throws {
+        passageLogger.debug("[SDK] captureRecordingData called with data: \(data != nil)")
+        
+        guard let remoteControl = remoteControl else {
+            passageLogger.error("[SDK] captureRecordingData failed - no remote control available")
+            throw PassageError.noRemoteControl
+        }
+        
+        // Call the remote control's capture recording data method
+        await remoteControl.captureRecordingData(data: data ?? [:])
+        passageLogger.info("[SDK] captureRecordingData completed successfully")
+    }
+    
+    /// Complete recording session with optional data (completion handler version for Objective-C compatibility)
+    /// Matches React Native SDK completeRecording method
+    public func completeRecording(data: [String: Any]? = nil, completionHandler: @escaping (Error?) -> Void) {
+        Task {
+            do {
+                try await completeRecording(data: data)
+                completionHandler(nil)
+            } catch {
+                completionHandler(error)
+            }
+        }
+    }
+    
+    /// Capture recording data without completing the session (completion handler version for Objective-C compatibility)
+    /// Matches React Native SDK captureRecordingData method
+    public func captureRecordingData(data: [String: Any]? = nil, completionHandler: @escaping (Error?) -> Void) {
+        Task {
+            do {
+                try await captureRecordingData(data: data)
+                completionHandler(nil)
+            } catch {
+                completionHandler(error)
+            }
+        }
+    }
 }
+
+// MARK: - Passage Errors
+
+public enum PassageError: Error, LocalizedError {
+    case noRemoteControl
+    case invalidConfiguration
+    case recordingFailed(String)
+    
+    public var errorDescription: String? {
+        switch self {
+        case .noRemoteControl:
+            return "Remote control is not available. Make sure Passage is properly configured."
+        case .invalidConfiguration:
+            return "Invalid Passage configuration."
+        case .recordingFailed(let message):
+            return "Recording failed: \(message)"
+        }
+    }
+}
+
 #endif
 
 // MARK: - Cross-Platform Core

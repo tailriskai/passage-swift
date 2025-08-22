@@ -58,6 +58,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     // Navigation timeout timer
     private var navigationTimeoutTimer: Timer?
+    private var navigationStartTime: Date?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -1489,6 +1490,8 @@ extension WebViewModalViewController: WKNavigationDelegate {
             
             // Handle navigation state change (like React Native implementation)
             handleNavigationStateChange(url: url.absoluteString, loading: true, webViewType: webViewType)
+            passageAnalytics.trackNavigationStart(url: url.absoluteString, webViewType: webViewType)
+            navigationStartTime = Date()
         } else {
             passageLogger.warn("[NAVIGATION] \(webViewType) loading with no URL")
         }
@@ -1528,6 +1531,9 @@ extension WebViewModalViewController: WKNavigationDelegate {
             
             // Handle navigation state change (like React Native implementation)
             handleNavigationStateChange(url: url.absoluteString, loading: false, webViewType: webViewType)
+            let duration = navigationStartTime != nil ? Date().timeIntervalSince(navigationStartTime!) : nil
+            passageAnalytics.trackNavigationSuccess(url: url.absoluteString, webViewType: webViewType, duration: duration)
+            navigationStartTime = nil
         }
     }
     
@@ -1538,6 +1544,9 @@ extension WebViewModalViewController: WKNavigationDelegate {
         
         let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
         passageLogger.webView("Navigation failed: \(error.localizedDescription)", webViewType: webViewType)
+        if let url = webView.url?.absoluteString {
+            passageAnalytics.trackNavigationError(url: url, webViewType: webViewType, error: error.localizedDescription)
+        }
     }
     
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -1545,12 +1554,13 @@ extension WebViewModalViewController: WKNavigationDelegate {
         navigationTimeoutTimer?.invalidate()
         navigationTimeoutTimer = nil
         
-        let _ = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
+        let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
         passageLogger.error("Provisional navigation failed: \(error.localizedDescription)")
         
         // Get the attempted URL
         if let url = webView.url {
             passageLogger.error("Failed URL: \(url.absoluteString)")
+            passageAnalytics.trackNavigationError(url: url.absoluteString, webViewType: webViewType, error: error.localizedDescription)
         }
         
         // Log more error details

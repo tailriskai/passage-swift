@@ -1,6 +1,6 @@
 Pod::Spec.new do |spec|
   spec.name         = "PassageSDK"
-  spec.version      = "0.0.1"
+  spec.version      = "0.0.2"
   spec.summary      = "Passage SDK for iOS"
   spec.description  = <<-DESC
     The everywhere API
@@ -11,7 +11,7 @@ Pod::Spec.new do |spec|
   spec.license      = { :type => "MIT", :file => "LICENSE" }
   spec.author       = { "Passage" => "developers@tailrisk.ai" }
   
-  spec.swift_version = "5.7"
+  spec.swift_version = "5.10"
   
   # Source-based distribution
   spec.source       = { 
@@ -20,8 +20,9 @@ Pod::Spec.new do |spec|
   }
   
   # Source files
-  spec.source_files = "Sources/PassageSDK/**/*.swift"
-  
+  spec.source_files = "Sources/PassageSDK/**/*.{swift,h,m}"
+  spec.public_header_files = "Sources/PassageSDK/include/*.h"
+
   # Platform support
   spec.ios.deployment_target = "13.0"
   
@@ -30,11 +31,19 @@ Pod::Spec.new do |spec|
   
   # Framework settings
   spec.requires_arc = true
-  spec.static_framework = false
-  
+  spec.static_framework = true
+
   # Build settings
   spec.pod_target_xcconfig = { 
-    'SWIFT_VERSION' => '5.7',
-    'BUILD_LIBRARY_FOR_DISTRIBUTION' => 'YES'
+    'SWIFT_VERSION' => '5.10',
+    'DEFINES_MODULE' => 'YES',
+    'CLANG_ENABLE_MODULES' => 'YES',
+    'SWIFT_EMIT_LOC_STRINGS' => 'NO',
+    'OTHER_SWIFT_FLAGS' => '-DCocoaPods',
+    'SWIFT_INSTALL_OBJC_HEADER' => 'YES',
+    'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) COCOAPODS=1'
   }
+  
+  # Ensure module map is properly generated
+  spec.module_name = 'PassageSDK'
 end

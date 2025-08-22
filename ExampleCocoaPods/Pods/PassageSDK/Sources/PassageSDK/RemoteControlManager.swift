@@ -291,6 +291,7 @@ class RemoteControlManager {
         
         // Fetch configuration first
         passageLogger.info("[REMOTE CONTROL] Fetching configuration from server...")
+        passageAnalytics.trackConfigurationRequest(url: "\(config.socketUrl)\(PassageConstants.Paths.automationConfig)")
         fetchConfiguration { [weak self] in
             passageLogger.info("[REMOTE CONTROL] Configuration fetch completed, proceeding to socket connection")
             self?.connectSocket()
@@ -317,12 +318,14 @@ class RemoteControlManager {
             if let error = error {
                 passageLogger.error("[REMOTE CONTROL] Configuration fetch error: \(error.localizedDescription)")
                 passageLogger.error("[REMOTE CONTROL] Error details: \(error)")
+                passageAnalytics.trackConfigurationError(error: error.localizedDescription, url: urlString)
             }
             
             if let httpResponse = response as? HTTPURLResponse {
                 passageLogger.info("[REMOTE CONTROL] Configuration response status: \(httpResponse.statusCode)")
                 if httpResponse.statusCode != 200 {
                     passageLogger.warn("[REMOTE CONTROL] Non-200 status code received")
+                    passageAnalytics.trackConfigurationError(error: "Status code: \(httpResponse.statusCode)", url: urlString)
                 }
             }
             
@@ -350,12 +353,15 @@ class RemoteControlManager {
                         if let callback = self?.onConfigurationUpdated {
                             callback(self?.automationUserAgent ?? "", self?.integrationUrl)
                         }
+                        passageAnalytics.trackConfigurationSuccess(userAgent: self?.automationUserAgent, integrationUrl: self?.integrationUrl)
                     }
                 } catch {
                     passageLogger.error("[REMOTE CONTROL] JSON parsing error: \(error)")
+                    passageAnalytics.trackConfigurationError(error: "JSON parsing error", url: urlString)
                 }
             } else {
                 passageLogger.warn("[REMOTE CONTROL] No data received in configuration response")
+                passageAnalytics.trackConfigurationError(error: "No data", url: urlString)
             }
             
             completion()
@@ -369,6 +375,7 @@ class RemoteControlManager {
         passageLogger.info("[REMOTE CONTROL] Socket URL: \(socketURL.absoluteString)")
         passageLogger.info("[REMOTE CONTROL] Namespace: \(config.socketNamespace)")
         passageLogger.info("[REMOTE CONTROL] Intent token available: \(intentToken != nil)")
+        passageAnalytics.trackRemoteControlConnectStart(socketUrl: socketURL.absoluteString, namespace: config.socketNamespace)
         
         let socketConfig: SocketIOClientConfiguration = [
             .log(config.debug),  // Use unified debug flag from PassageConfig
@@ -449,12 +456,14 @@ class RemoteControlManager {
                 passageLogger.info("[SOCKET INFO] Socket ID: \(socket.sid ?? "no-sid")")
                 passageLogger.info("[SOCKET INFO] Status: \(socket.status)")
                 passageLogger.info("[SOCKET INFO] Manager status: \(socket.manager?.status ?? .notConnected)")
+                passageAnalytics.trackRemoteControlConnectSuccess(socketId: socket.sid)
             }
         }
         
         socket?.on(clientEvent: .error) { [weak self] data, ack in
             passageLogger.error("[SOCKET EVENT] ❌ ERROR occurred")
             passageLogger.error("[SOCKET EVENT] Error data: \(data)")
+            passageAnalytics.trackRemoteControlConnectError(error: String(describing: data), attempt: 1)
             
             // Try to parse error details
             if let errorArray = data as? [Any], !errorArray.isEmpty {
@@ -473,6 +482,7 @@ class RemoteControlManager {
             passageLogger.warn("[SOCKET EVENT] 🔌 DISCONNECTED from server")
             passageLogger.warn("[SOCKET EVENT] Disconnect reason: \(data)")
             self?.isConnected = false
+            passageAnalytics.trackRemoteControlDisconnect(reason: "\(data)")
             
             // Log final socket state
             if let socket = self?.socket {
@@ -727,6 +737,7 @@ class RemoteControlManager {
         }
         
         passageLogger.info("[COMMAND HANDLER] Navigating to URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageAnalytics.trackCommandReceived(commandId: command.id, commandType: command.type.rawValue, userActionRequired: command.userActionRequired ?? false)
         
         DispatchQueue.main.async {
             NotificationCenter.default.post(
@@ -745,6 +756,7 @@ class RemoteControlManager {
         
         passageLogger.info("[COMMAND HANDLER] Executing \(command.type.rawValue) script for command: \(command.id)")
         passageLogger.debug("[COMMAND HANDLER] Script length: \(script.count) characters")
+        passageAnalytics.trackCommandReceived(commandId: command.id, commandType: command.type.rawValue, userActionRequired: command.userActionRequired ?? false)
         
         DispatchQueue.main.async {
             NotificationCenter.default.post(
@@ -868,6 +880,7 @@ class RemoteControlManager {
             )
             
             self?.sendResult(result)
+            passageAnalytics.trackCommandSuccess(commandId: commandId, commandType: self?.currentCommand?.type.rawValue ?? "", duration: nil)
         }
     }
     
@@ -881,6 +894,7 @@ class RemoteControlManager {
             error: error
         )
         sendResult(result)
+        passageAnalytics.trackCommandError(commandId: commandId, commandType: currentCommand?.type.rawValue ?? "", error: error)
     }
     
     func sendCommandResult(commandId: String, data: Any?, pageData: [String: Any]?) {
@@ -1325,6 +1339,88 @@ class RemoteControlManager {
         passageLogger.debug("[REMOTE CONTROL]   - Returning data count: \(connectionData?.count ?? 0)")
         passageLogger.debug("[REMOTE CONTROL]   - Returning connection ID: \(connectionId ?? "nil")")
         return (connectionData, connectionId)
+    }
+    
+    // MARK: - Recording Methods (matching React Native SDK)
+    
+    /// Complete recording session with optional data
+    /// Matches React Native SDK completeRecording method
+    func completeRecording(data: [String: Any]) async {
+        passageLogger.debug("[REMOTE CONTROL] completeRecording called with data: \(data)")
+        
+        guard let currentCommand = currentCommand else {
+            passageLogger.error("[REMOTE CONTROL] No current command available to complete")
+            return
+        }
+        
+        passageLogger.debug("[REMOTE CONTROL] Completing recording for command: \(currentCommand.id)")
+        
+        // Collect page data with screenshot if record flag is enabled
+        await withCheckedContinuation { continuation in
+            getPageData { pageData in
+                // Send done result with success status
+                let result = CommandResult(
+                    id: currentCommand.id,
+                    status: "done",
+                    data: AnyCodable(data),
+                    pageData: pageData,
+                    error: nil
+                )
+                
+                Task {
+                    await self.sendResult(result)
+                    
+                    // Call success callback if available
+                    if let onSuccess = self.onSuccess,
+                       let connectionData = self.connectionData,
+                       let connectionId = self.connectionId {
+                        let successData = PassageSuccessData(
+                            history: connectionData.compactMap { item in
+                                PassageHistoryItem(structuredData: item, additionalData: [:])
+                            },
+                            connectionId: connectionId
+                        )
+                        onSuccess(successData)
+                    }
+                    
+                    passageLogger.info("[REMOTE CONTROL] Recording completed successfully")
+                    continuation.resume()
+                }
+            }
+        }
+    }
+    
+    /// Capture recording data without completing the session
+    /// Matches React Native SDK captureRecordingData method
+    func captureRecordingData(data: [String: Any]) async {
+        passageLogger.debug("[REMOTE CONTROL] captureRecordingData called with data: \(data)")
+        
+        guard let currentCommand = currentCommand else {
+            passageLogger.error("[REMOTE CONTROL] No current command available to capture")
+            return
+        }
+        
+        passageLogger.debug("[REMOTE CONTROL] Capturing recording data for command: \(currentCommand.id)")
+        
+        // Collect page data with screenshot if record flag is enabled
+        await withCheckedContinuation { continuation in
+            getPageData { pageData in
+                // Send success result (not done, so session continues)
+                let result = CommandResult(
+                    id: currentCommand.id,
+                    status: "success",
+                    data: AnyCodable(data),
+                    pageData: pageData,
+                    error: nil
+                )
+                
+                Task {
+                    await self.sendResult(result)
+                    passageLogger.info("[REMOTE CONTROL] Recording data captured successfully")
+                    continuation.resume()
+                }
+            }
+        }
     }
     
     func disconnect() {
