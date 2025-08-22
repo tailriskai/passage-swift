@@ -508,9 +508,11 @@ public class PassageAnalytics {
         
         eventQueue.append(payload)
         
-        // Flush if batch size reached
+        // Flush if batch size reached (async to avoid blocking)
         if eventQueue.count >= config.batchSize {
-            flushEvents()
+            analyticsQueue.async { [weak self] in
+                self?.flushEvents()
+            }
         }
     }
     

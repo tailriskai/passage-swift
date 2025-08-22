@@ -303,9 +303,11 @@ public class PassageLogger {
         
         logQueue.append(entry)
         
-        // Flush if batch size reached
+        // Flush if batch size reached (async to avoid blocking)
         if logQueue.count >= httpConfig.batchSize {
-            flushLogs()
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                self?.flushLogs()
+            }
         }
     }
     
