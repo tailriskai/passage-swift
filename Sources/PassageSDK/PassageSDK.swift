@@ -288,6 +288,8 @@ public class Passage: NSObject {
         self.onExit = onExit
         self.onWebviewChange = onWebviewChange
         
+        passageLogger.debug("[SDK] Callbacks stored - onExit: \(onExit != nil ? "set" : "nil")")
+        
         // Build URL from token
         let url = buildUrlFromToken(token)
         DispatchQueue.main.async { [weak self] in
@@ -708,6 +710,7 @@ public class Passage: NSObject {
     
     private func handleClose() {
         passageLogger.debug("[SDK] handleClose called - user manually closed modal")
+        passageLogger.debug("[SDK] onExit callback: \(onExit != nil ? "available" : "nil")")
         onExit?("user_action")
         passageAnalytics.trackModalClosed(reason: "user_action")
         // Clear webview state when user manually closes modal
@@ -746,11 +749,19 @@ public class Passage: NSObject {
         
         navigationCompletionHandler = nil
         
+        // Clear all callback references to prevent stale callbacks in next session
+        onConnectionComplete = nil
+        onConnectionError = nil
+        onDataComplete = nil
+        onPromptComplete = nil
+        onExit = nil
+        onWebviewChange = nil
+        
         // Reset webview URLs to ensure clean state for next session
         webViewController?.resetURLState()
         
         // Don't nil out webViewController - keep it for reuse
-        passageLogger.debug("[SDK] Cleanup after close completed, webviews kept alive, URLs reset")
+        passageLogger.debug("[SDK] Cleanup after close completed, callbacks cleared, webviews kept alive, URLs reset")
     }
     
     private func cleanup() {
