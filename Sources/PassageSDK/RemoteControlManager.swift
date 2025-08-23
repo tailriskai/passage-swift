@@ -613,7 +613,7 @@ class RemoteControlManager {
             
             if let status = connectionData["status"] as? String,
                let progress = connectionData["progress"] as? Int,
-               status == "data_available" && progress == 100,
+               (status == "connected" || status == "data_available") && progress == 100,
                let actualData = connectionData["data"] as? [[String: Any]],
                !actualData.isEmpty {
                 

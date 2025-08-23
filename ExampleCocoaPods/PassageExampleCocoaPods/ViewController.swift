@@ -8,6 +8,26 @@ class ViewController: UIViewController {
     private var connectButton: UIButton!
     private var resultTextView: UITextView!
     private var versionLabel: UILabel!
+    private var integrationLabel: UILabel!
+    private var integrationButton: UIButton!
+    private var selectedIntegration: String = "kroger"
+    
+    private let integrationOptions: [(value: String, label: String)] = [
+        ("passage-test-captcha", "Passage Test Integration (with CAPTCHA)"),
+        ("passage-test", "Passage Test Integration"),
+        ("kroger", "Kroger"),
+        ("kindle", "Kindle"),
+        ("audible", "Audible"),
+        ("youtube", "YouTube"),
+        ("netflix", "Netflix"),
+        ("doordash", "Doordash"),
+        ("ubereats", "UberEats"),
+        ("chess", "Chess.com"),
+        ("spotify", "Spotify"),
+        ("verizon", "Verizon"),
+        ("chewy", "Chewy"),
+        ("att", "AT&T")
+    ]
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -62,6 +82,29 @@ class ViewController: UIViewController {
         versionLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(versionLabel)
         
+        // Integration Label
+        integrationLabel = UILabel()
+        integrationLabel.text = "Integration Type:"
+        integrationLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        integrationLabel.textColor = .label
+        integrationLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(integrationLabel)
+        
+        // Integration Button
+        integrationButton = UIButton(type: .system)
+        integrationButton.setTitle(getSelectedIntegrationLabel(), for: .normal)
+        integrationButton.titleLabel?.font = .systemFont(ofSize: 16)
+        integrationButton.backgroundColor = .systemGray6
+        integrationButton.setTitleColor(.label, for: .normal)
+        integrationButton.layer.cornerRadius = 8
+        integrationButton.layer.borderWidth = 1
+        integrationButton.layer.borderColor = UIColor.systemGray4.cgColor
+        integrationButton.contentHorizontalAlignment = .left
+        integrationButton.titleEdgeInsets = UIEdgeInsets(top: 0, left: 12, bottom: 0, right: 0)
+        integrationButton.translatesAutoresizingMaskIntoConstraints = false
+        integrationButton.addTarget(self, action: #selector(integrationButtonTapped), for: .touchUpInside)
+        view.addSubview(integrationButton)
+        
         // Connect Button
         connectButton = UIButton(type: .system)
         connectButton.setTitle("Connect", for: .normal)
@@ -96,8 +139,19 @@ class ViewController: UIViewController {
             versionLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             versionLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             
+            // Integration Label
+            integrationLabel.topAnchor.constraint(equalTo: versionLabel.bottomAnchor, constant: 30),
+            integrationLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            integrationLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            
+            // Integration Button
+            integrationButton.topAnchor.constraint(equalTo: integrationLabel.bottomAnchor, constant: 8),
+            integrationButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            integrationButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            integrationButton.heightAnchor.constraint(equalToConstant: 44),
+            
             // Connect Button
-            connectButton.topAnchor.constraint(equalTo: versionLabel.bottomAnchor, constant: 40),
+            connectButton.topAnchor.constraint(equalTo: integrationButton.bottomAnchor, constant: 30),
             connectButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             connectButton.widthAnchor.constraint(equalToConstant: 200),
             connectButton.heightAnchor.constraint(equalToConstant: 50),
@@ -108,6 +162,39 @@ class ViewController: UIViewController {
             resultTextView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             resultTextView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20)
         ])
+    }
+    
+    private func getSelectedIntegrationLabel() -> String {
+        return integrationOptions.first { $0.value == selectedIntegration }?.label ?? "Select Integration"
+    }
+    
+    @objc private func integrationButtonTapped() {
+        let alertController = UIAlertController(title: "Select Integration", message: nil, preferredStyle: .actionSheet)
+        
+        for option in integrationOptions {
+            let action = UIAlertAction(title: option.label, style: .default) { [weak self] _ in
+                self?.selectedIntegration = option.value
+                self?.integrationButton.setTitle(option.label, for: .normal)
+                print("Selected integration: \(option.label)")
+            }
+            
+            if option.value == selectedIntegration {
+                action.setValue(UIImage(systemName: "checkmark"), forKey: "image")
+            }
+            
+            alertController.addAction(action)
+        }
+        
+        let cancelAction = UIAlertAction(title: "Cancel", style: .cancel)
+        alertController.addAction(cancelAction)
+        
+        // For iPad support
+        if let popover = alertController.popoverPresentationController {
+            popover.sourceView = integrationButton
+            popover.sourceRect = integrationButton.bounds
+        }
+        
+        present(alertController, animated: true)
     }
     
     @objc private func connectButtonTapped() {
@@ -199,9 +286,9 @@ class ViewController: UIViewController {
         request.setValue("cors", forHTTPHeaderField: "sec-fetch-mode")
         request.setValue("cross-site", forHTTPHeaderField: "sec-fetch-site")
         
-        // Create request body with kruger integration
+        // Create request body with selected integration
         let requestBody: [String: Any] = [
-            "integrationId": "kroger"
+            "integrationId": selectedIntegration
         ]
         
         do {
