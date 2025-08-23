@@ -11,17 +11,20 @@ public struct PassageConfig {
     public let socketUrl: String
     public let socketNamespace: String
     public let debug: Bool
+    public let agentName: String
     
     public init(
         baseUrl: String? = nil,
         socketUrl: String? = nil,
         socketNamespace: String? = nil,
-        debug: Bool = false
+        debug: Bool = false,
+        agentName: String? = nil
     ) {
         self.baseUrl = baseUrl ?? PassageConstants.Defaults.baseUrl
         self.socketUrl = socketUrl ?? PassageConstants.Defaults.socketUrl
         self.socketNamespace = socketNamespace ?? PassageConstants.Defaults.socketNamespace
         self.debug = debug
+        self.agentName = agentName ?? PassageConstants.Defaults.agentName
     }
 }
 
@@ -512,7 +515,8 @@ public class Passage: NSObject {
         
         components.queryItems = [
             URLQueryItem(name: "intentToken", value: token),
-            URLQueryItem(name: "sdkSession", value: sdkSession)
+            URLQueryItem(name: "sdkSession", value: sdkSession),
+            URLQueryItem(name: "agentName", value: config.agentName)
         ]
         
         guard let finalUrl = components.url else {

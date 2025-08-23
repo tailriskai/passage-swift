@@ -855,7 +855,8 @@ class RemoteControlManager {
         var components = URLComponents(string: "\(config.baseUrl)\(PassageConstants.Paths.connect)")!
         var queryItems = [
             URLQueryItem(name: "intentToken", value: intentToken ?? ""),
-            URLQueryItem(name: "success", value: success.description)
+            URLQueryItem(name: "success", value: success.description),
+            URLQueryItem(name: "agentName", value: config.agentName)
         ]
         
         if let error = error {

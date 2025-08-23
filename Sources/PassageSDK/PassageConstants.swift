@@ -59,6 +59,7 @@ public enum PassageConstants {
         public static let socketUrl = "https://api.getpassage.ai"
         public static let socketNamespace = "/ws"
         public static let loggerEndpoint = "https://ui.getpassage.ai/api/logger"
+        public static let agentName = "passage-swift"
     }
     
     // Error domains
