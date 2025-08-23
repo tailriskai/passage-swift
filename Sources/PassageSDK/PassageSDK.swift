@@ -447,6 +447,35 @@ public class Passage: NSObject {
         }
     }
     
+    public func clearAllCookies() {
+        passageLogger.info("[SDK] Clearing all cookies")
+        
+        DispatchQueue.main.async {
+            WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+                passageLogger.debug("[SDK] Found \(cookies.count) cookies to clear")
+                
+                for cookie in cookies {
+                    WKWebsiteDataStore.default().httpCookieStore.delete(cookie)
+                }
+                
+                passageLogger.info("[SDK] All cookies cleared successfully")
+            }
+        }
+    }
+    
+    public func clearWebViewState() {
+        passageLogger.info("[SDK] Clearing webview state")
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Clear webview state by resetting both webviews
+            self.webViewController?.clearWebViewState()
+            
+            passageLogger.info("[SDK] WebView state cleared successfully")
+        }
+    }
+    
     // MARK: - Resource Management
     
     /// Force a full cleanup of all resources including webviews
@@ -634,6 +663,8 @@ public class Passage: NSObject {
         
         passageAnalytics.trackModalClosed(reason: "success")
         navigationController?.dismiss(animated: true) {
+            // Clear webview state after successful connection before cleanup
+            self.clearWebViewState()
             self.cleanupAfterClose()
         }
     }
@@ -646,6 +677,8 @@ public class Passage: NSObject {
         passageAnalytics.trackOnError(error: error, data: data)
         passageAnalytics.trackModalClosed(reason: "error")
         navigationController?.dismiss(animated: true) {
+            // Clear webview state after error before cleanup
+            self.clearWebViewState()
             self.cleanupAfterClose()
         }
     }
@@ -653,6 +686,8 @@ public class Passage: NSObject {
     private func handleClose() {
         onExit?("user_action")
         passageAnalytics.trackModalClosed(reason: "user_action")
+        // Clear webview state when user manually closes modal
+        clearWebViewState()
         cleanupAfterClose()
     }
     

@@ -1189,6 +1189,59 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         return isShowingUIWebView ? PassageConstants.WebViewTypes.ui : PassageConstants.WebViewTypes.automation
     }
     
+    // Clear webview state (navigation history, cache, etc.)
+    func clearWebViewState() {
+        passageLogger.info("[WEBVIEW] Clearing webview state for both UI and automation webviews")
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Clear navigation history and reload both webviews to reset state
+            if let uiWebView = self.uiWebView {
+                passageLogger.debug("[WEBVIEW] Clearing UI webview state")
+                
+                // Stop any loading
+                if uiWebView.isLoading {
+                    uiWebView.stopLoading()
+                }
+                
+                // Clear back/forward history by loading about:blank
+                uiWebView.loadHTMLString("", baseURL: nil)
+                
+                // Clear website data for this webview
+                let dataStore = uiWebView.configuration.websiteDataStore
+                let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+                dataStore.removeData(ofTypes: dataTypes, modifiedSince: Date(timeIntervalSince1970: 0)) {
+                    passageLogger.debug("[WEBVIEW] UI webview data cleared")
+                }
+            }
+            
+            if let automationWebView = self.automationWebView {
+                passageLogger.debug("[WEBVIEW] Clearing automation webview state")
+                
+                // Stop any loading
+                if automationWebView.isLoading {
+                    automationWebView.stopLoading()
+                }
+                
+                // Clear back/forward history by loading about:blank
+                automationWebView.loadHTMLString("", baseURL: nil)
+                
+                // Clear website data for this webview
+                let dataStore = automationWebView.configuration.websiteDataStore
+                let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+                dataStore.removeData(ofTypes: dataTypes, modifiedSince: Date(timeIntervalSince1970: 0)) {
+                    passageLogger.debug("[WEBVIEW] Automation webview data cleared")
+                }
+            }
+            
+            // Reset webview state variables
+            self.resetForNewSession()
+            
+            passageLogger.info("[WEBVIEW] Both webview states cleared successfully")
+        }
+    }
+    
     // MARK: - Screenshot Support (matching React Native implementation)
     
     private func setupScreenshotAccessors() {
