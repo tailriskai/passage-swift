@@ -1,0 +1,248 @@
+name: Release and Publish to CocoaPods
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+      release_notes:
+        description: "Release notes (markdown supported)"
+        required: false
+        type: string
+        default: |
+          ### What's Changed
+          - Bug fixes and improvements
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release-and-publish:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install CocoaPods
+        run: |
+          sudo gem install cocoapods
+          pod --version
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get current version and bump
+        id: version
+        run: |
+          # Get current version from podspec
+          CURRENT_VERSION=$(grep -E "spec\.version\s*=" PassageSDK.podspec | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+          # Calculate new version
+          IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]}
+
+          case "${{ github.event.inputs.version_bump }}" in
+            "major")
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            "minor")
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            "patch")
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          echo "📦 Bumped version from $CURRENT_VERSION to $NEW_VERSION"
+
+      - name: Update version in files
+        run: |
+          # Update podspec version
+          sed -i '' 's/spec\.version[[:space:]]*=[[:space:]]*"[^"]*"/spec.version      = "${{ steps.version.outputs.new_version }}"/' PassageSDK.podspec
+
+          # Verify the change
+          echo "Updated podspec version:"
+          grep -E "spec\.version\s*=" PassageSDK.podspec
+
+      - name: Validate Swift Package
+        run: |
+          echo "🔍 Validating Swift Package..."
+          swift package resolve
+          swift build
+          echo "✅ Swift Package validation passed"
+
+      - name: Validate podspec syntax
+        run: |
+          echo "🔍 Validating podspec syntax..."
+          pod lib lint PassageSDK.podspec --allow-warnings --skip-import-validation --sources='https://cdn.cocoapods.org/'
+          echo "✅ Podspec syntax validation passed"
+
+      - name: Commit version bump
+        run: |
+          git add PassageSDK.podspec
+          git commit -m "chore: bump version to ${{ steps.version.outputs.new_version }}"
+          git tag "v${{ steps.version.outputs.new_version }}"
+
+      - name: Push changes and tags
+        run: |
+          git push origin main
+          git push origin "v${{ steps.version.outputs.new_version }}"
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.version.outputs.new_version }}
+          release_name: Release v${{ steps.version.outputs.new_version }}
+          body: |
+            ## Release v${{ steps.version.outputs.new_version }}
+
+            ${{ github.event.inputs.release_notes }}
+
+            ---
+
+            ## Installation
+
+            ### CocoaPods
+            ```ruby
+            pod 'PassageSDK', '~> ${{ steps.version.outputs.new_version }}'
+            ```
+
+            ### Swift Package Manager
+            ```swift
+            dependencies: [
+                .package(url: "https://github.com/tailriskai/passage-swift.git", from: "${{ steps.version.outputs.new_version }}")
+            ]
+            ```
+          draft: false
+          prerelease: false
+
+      - name: Wait for GitHub to process tag
+        run: |
+          echo "⏳ Waiting for GitHub to process the new tag..."
+          sleep 30
+
+      - name: Full podspec validation against remote
+        run: |
+          echo "🔍 Performing full podspec validation against remote repository..."
+
+          # Retry logic for podspec validation
+          max_attempts=3
+          attempt=1
+
+          while [ $attempt -le $max_attempts ]; do
+            echo "Attempt $attempt of $max_attempts..."
+            
+            if pod spec lint PassageSDK.podspec --allow-warnings --sources='https://cdn.cocoapods.org/'; then
+              echo "✅ Full podspec validation passed"
+              break
+            else
+              if [ $attempt -eq $max_attempts ]; then
+                echo "❌ Full podspec validation failed after $max_attempts attempts"
+                echo "This might be due to GitHub tag propagation delay"
+                exit 1
+              else
+                echo "⏳ Validation failed, waiting 30 seconds before retry..."
+                sleep 30
+                attempt=$((attempt + 1))
+              fi
+            fi
+          done
+
+      - name: Publish to CocoaPods
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+        run: |
+          echo "🚀 Publishing to CocoaPods..."
+
+          # Check if we have a trunk token
+          if [ -z "$COCOAPODS_TRUNK_TOKEN" ]; then
+            echo "❌ COCOAPODS_TRUNK_TOKEN secret is not set"
+            echo "Please add your CocoaPods trunk token as a repository secret"
+            echo "Get your token by running: pod trunk me"
+            exit 1
+          fi
+
+          # Publish to CocoaPods
+          pod trunk push PassageSDK.podspec --allow-warnings
+          echo "✅ Successfully published to CocoaPods!"
+
+      - name: Create XCFramework for release asset
+        run: |
+          echo "📦 Building XCFramework..."
+
+          # Build for iOS device
+          xcodebuild archive \
+            -scheme PassageSDK \
+            -destination "generic/platform=iOS" \
+            -archivePath "build/PassageSDK-iOS.xcarchive" \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+
+          # Build for iOS simulator
+          xcodebuild archive \
+            -scheme PassageSDK \
+            -destination "generic/platform=iOS Simulator" \
+            -archivePath "build/PassageSDK-iOS-Simulator.xcarchive" \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+
+          # Create XCFramework
+          xcodebuild -create-xcframework \
+            -framework "build/PassageSDK-iOS.xcarchive/Products/Library/Frameworks/PassageSDK.framework" \
+            -framework "build/PassageSDK-iOS-Simulator.xcarchive/Products/Library/Frameworks/PassageSDK.framework" \
+            -output "PassageSDK.xcframework"
+
+          # Create zip archive
+          zip -r PassageSDK-${{ steps.version.outputs.new_version }}.xcframework.zip PassageSDK.xcframework
+
+      - name: Upload XCFramework Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./PassageSDK-${{ steps.version.outputs.new_version }}.xcframework.zip
+          asset_name: PassageSDK-${{ steps.version.outputs.new_version }}.xcframework.zip
+          asset_content_type: application/zip
+
+      - name: Output success message
+        run: |
+          echo "✅ Successfully released and published!"
+          echo "📦 Package: PassageSDK@${{ steps.version.outputs.new_version }}"
+          echo "🏷️  Git tag: v${{ steps.version.outputs.new_version }}"
+          echo "🔗 CocoaPods: https://cocoapods.org/pods/PassageSDK"
+          echo "📋 Release: https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version.outputs.new_version }}"
+          echo ""
+          echo "🎉 Developers can now use:"
+          echo "   CocoaPods: pod 'PassageSDK', '~> ${{ steps.version.outputs.new_version }}'"
+          echo "   SPM: .package(url: \"https://github.com/tailriskai/passage-swift.git\", from: \"${{ steps.version.outputs.new_version }}\")"
