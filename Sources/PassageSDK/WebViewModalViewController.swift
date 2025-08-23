@@ -890,6 +890,11 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         currentScreenshot = nil
         previousScreenshot = nil
         
+        // Reset URL state variables to empty/initial values
+        currentURL = ""
+        initialURLToLoad = nil
+        // Note: We don't reset 'url' property as it may be set externally for the next session
+        
         // Cancel any timers
         navigationTimeoutTimer?.invalidate()
         navigationTimeoutTimer = nil
@@ -906,6 +911,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 automationWebView.stopLoading()
             }
         }
+        
+        passageLogger.debug("[WEBVIEW] URL state reset: currentURL='', initialURLToLoad=nil")
     }
     
     func loadURL(_ url: URL) {
@@ -981,6 +988,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     @objc private func closeModal() {
         passageLogger.debug("Close button tapped, dismissing modal")
+        
+        // Reset URL state immediately when modal closes
+        resetURLState()
+        
         dismiss(animated: true) {
             self.onClose?()
             self.delegate?.webViewModalDidClose()
@@ -1189,6 +1200,22 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         return isShowingUIWebView ? PassageConstants.WebViewTypes.ui : PassageConstants.WebViewTypes.automation
     }
     
+    // Reset URL state to empty/initial values
+    func resetURLState() {
+        passageLogger.info("[WEBVIEW] Resetting URL state to empty/initial values")
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Reset all URL-related state variables
+            self.url = ""
+            self.currentURL = ""
+            self.initialURLToLoad = nil
+            
+            passageLogger.debug("[WEBVIEW] URL state reset complete: url='', currentURL='', initialURLToLoad=nil")
+        }
+    }
+    
     // Clear webview state (navigation history, cache, etc.)
     func clearWebViewState() {
         passageLogger.info("[WEBVIEW] Clearing webview state for both UI and automation webviews")
@@ -1238,7 +1265,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             // Reset webview state variables
             self.resetForNewSession()
             
-            passageLogger.info("[WEBVIEW] Both webview states cleared successfully")
+            // Additionally reset the main URL property to empty for next session
+            self.url = ""
+            
+            passageLogger.info("[WEBVIEW] Both webview states and URLs cleared successfully")
         }
     }
     
@@ -1453,6 +1483,11 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
         // Handle pull-down dismissal
+        passageLogger.debug("Modal dismissed via pull-down gesture")
+        
+        // Reset URL state immediately when modal is dismissed
+        resetURLState()
+        
         onClose?()
         delegate?.webViewModalDidClose()
     }

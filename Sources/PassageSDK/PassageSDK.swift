@@ -387,6 +387,10 @@ public class Passage: NSObject {
         passageLogger.debugMethod("close")
         
         DispatchQueue.main.async { [weak self] in
+            // Call onExit before dismissing
+            self?.onExit?("programmatic_close")
+            passageAnalytics.trackModalClosed(reason: "programmatic_close")
+            
             self?.navigationController?.dismiss(animated: true) {
                 // Don't cleanup webviews - keep them alive for reuse
                 self?.cleanupAfterClose()
@@ -476,6 +480,21 @@ public class Passage: NSObject {
             self.webViewController?.clearWebViewState()
             
             passageLogger.info("[SDK] WebView state cleared successfully")
+        }
+    }
+    
+    /// Reset webview URLs to empty/initial state
+    /// This is automatically called when the modal closes, but can be called manually if needed
+    public func resetWebViewURLs() {
+        passageLogger.info("[SDK] Resetting webview URLs to empty state")
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Reset URL state in the webview controller
+            self.webViewController?.resetURLState()
+            
+            passageLogger.info("[SDK] WebView URLs reset successfully")
         }
     }
     
@@ -688,6 +707,7 @@ public class Passage: NSObject {
     }
     
     private func handleClose() {
+        passageLogger.debug("[SDK] handleClose called - user manually closed modal")
         onExit?("user_action")
         passageAnalytics.trackModalClosed(reason: "user_action")
         // Clear webview state when user manually closes modal
@@ -718,11 +738,19 @@ public class Passage: NSObject {
     }
     
     private func cleanupAfterClose() {
-        // Only cleanup transient state, keep webviews alive
-        remoteControl?.disconnect()
+        // Emit modalExit and disconnect remote control
+        Task {
+            await remoteControl?.emitModalExit()
+            remoteControl?.disconnect()
+        }
+        
         navigationCompletionHandler = nil
+        
+        // Reset webview URLs to ensure clean state for next session
+        webViewController?.resetURLState()
+        
         // Don't nil out webViewController - keep it for reuse
-        passageLogger.debug("[SDK] Cleanup after close completed, webviews kept alive")
+        passageLogger.debug("[SDK] Cleanup after close completed, webviews kept alive, URLs reset")
     }
     
     private func cleanup() {

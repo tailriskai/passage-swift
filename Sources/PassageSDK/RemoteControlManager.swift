@@ -1424,6 +1424,42 @@ class RemoteControlManager {
         }
     }
     
+    // MARK: - Modal Exit Event (matching React Native SDK)
+    
+    /// Emit modalExit event to server before disconnecting
+    /// Matches React Native SDK emitModalExit method
+    func emitModalExit() async {
+        await withCheckedContinuation { continuation in
+            if let socket = socket, socket.status == .connected {
+                passageLogger.debug("[REMOTE CONTROL] Emitting modalExit event")
+                
+                let modalExitData: [String: Any] = [
+                    "timestamp": ISO8601DateFormatter().string(from: Date()),
+                    "intentToken": intentToken ?? ""
+                ]
+                
+                // Set up one-time listener for acknowledgment
+                let onAck: () -> Void = {
+                    passageLogger.debug("[REMOTE CONTROL] Received modalExit acknowledgment")
+                    continuation.resume()
+                }
+                
+                // Emit with callback for acknowledgment
+                socket.emit("modalExit", modalExitData, completion: onAck)
+                
+                // Fallback timeout in case server doesn't respond
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    passageLogger.debug("[REMOTE CONTROL] modalExit timeout, proceeding anyway")
+                    continuation.resume()
+                }
+            } else {
+                // If not connected, resolve immediately
+                passageLogger.debug("[REMOTE CONTROL] Socket not connected, skipping modalExit")
+                continuation.resume()
+            }
+        }
+    }
+    
     func disconnect() {
         passageLogger.info("[REMOTE CONTROL] ========== DISCONNECTING ==========")
         passageLogger.info("[REMOTE CONTROL] Current connection state: \(isConnected)")
