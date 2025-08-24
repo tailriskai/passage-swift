@@ -633,6 +633,7 @@ extension UIUserInterfaceIdiom {
         case .carPlay: return "carPlay"
         case .mac: return "mac"
         case .vision: return "vision"
+        case .unspecified: return "unspecified"
         @unknown default: return "unknown"
         }
     }

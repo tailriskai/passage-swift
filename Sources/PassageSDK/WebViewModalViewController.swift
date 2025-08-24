@@ -373,8 +373,15 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         configuration.websiteDataStore = WKWebsiteDataStore.default()
         
         // Enable JavaScript (required)
-        configuration.preferences.javaScriptEnabled = true
-        passageLogger.debug("[WEBVIEW] JavaScript enabled: true")
+        // Note: javaScriptEnabled is deprecated in iOS 14.0+, but JavaScript is enabled by default
+        // We keep this for iOS 13 compatibility, but it's a no-op on iOS 14+
+        if #available(iOS 14.0, *) {
+            // JavaScript is enabled by default in iOS 14+
+            passageLogger.debug("[WEBVIEW] JavaScript enabled by default (iOS 14+)")
+        } else {
+            configuration.preferences.javaScriptEnabled = true
+            passageLogger.debug("[WEBVIEW] JavaScript enabled: true (iOS 13)")
+        }
         
         // Allow inline media playback
         configuration.allowsInlineMediaPlayback = true
@@ -993,7 +1000,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         resetURLState()
         
         dismiss(animated: true) {
-            self.onClose?()
+            // Only call delegate method to avoid duplicate handleClose calls
+            // The delegate (PassageSDK) will handle the close logic
             self.delegate?.webViewModalDidClose()
         }
     }
@@ -1216,16 +1224,58 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         }
     }
     
-    // Clear webview state (navigation history, cache, etc.)
+    // Clear webview state (navigation history only, preserves cookies/localStorage/sessionStorage)
     func clearWebViewState() {
-        passageLogger.info("[WEBVIEW] Clearing webview state for both UI and automation webviews")
+        passageLogger.info("[WEBVIEW] Clearing webview navigation state (preserving cookies, localStorage, sessionStorage)")
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
-            // Clear navigation history and reload both webviews to reset state
+            // Clear navigation history only - preserve cookies, localStorage, sessionStorage
             if let uiWebView = self.uiWebView {
-                passageLogger.debug("[WEBVIEW] Clearing UI webview state")
+                passageLogger.debug("[WEBVIEW] Clearing UI webview navigation state")
+                
+                // Stop any loading
+                if uiWebView.isLoading {
+                    uiWebView.stopLoading()
+                }
+                
+                // Clear back/forward history by loading about:blank
+                uiWebView.loadHTMLString("", baseURL: nil)
+            }
+            
+            if let automationWebView = self.automationWebView {
+                passageLogger.debug("[WEBVIEW] Clearing automation webview navigation state")
+                
+                // Stop any loading
+                if automationWebView.isLoading {
+                    automationWebView.stopLoading()
+                }
+                
+                // Clear back/forward history by loading about:blank
+                automationWebView.loadHTMLString("", baseURL: nil)
+            }
+            
+            // Reset webview state variables
+            self.resetForNewSession()
+            
+            // Additionally reset the main URL property to empty for next session
+            self.url = ""
+            
+            passageLogger.info("[WEBVIEW] Navigation state cleared successfully (cookies/localStorage/sessionStorage preserved)")
+        }
+    }
+    
+    // Clear all webview data including cookies, localStorage, sessionStorage (manual method)
+    func clearWebViewData() {
+        passageLogger.info("[WEBVIEW] Clearing ALL webview data including cookies, localStorage, sessionStorage")
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Clear all website data for both webviews
+            if let uiWebView = self.uiWebView {
+                passageLogger.debug("[WEBVIEW] Clearing ALL UI webview data")
                 
                 // Stop any loading
                 if uiWebView.isLoading {
@@ -1235,16 +1285,16 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 // Clear back/forward history by loading about:blank
                 uiWebView.loadHTMLString("", baseURL: nil)
                 
-                // Clear website data for this webview
+                // Clear ALL website data for this webview
                 let dataStore = uiWebView.configuration.websiteDataStore
                 let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
                 dataStore.removeData(ofTypes: dataTypes, modifiedSince: Date(timeIntervalSince1970: 0)) {
-                    passageLogger.debug("[WEBVIEW] UI webview data cleared")
+                    passageLogger.debug("[WEBVIEW] ALL UI webview data cleared (cookies, localStorage, sessionStorage)")
                 }
             }
             
             if let automationWebView = self.automationWebView {
-                passageLogger.debug("[WEBVIEW] Clearing automation webview state")
+                passageLogger.debug("[WEBVIEW] Clearing ALL automation webview data")
                 
                 // Stop any loading
                 if automationWebView.isLoading {
@@ -1254,11 +1304,11 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 // Clear back/forward history by loading about:blank
                 automationWebView.loadHTMLString("", baseURL: nil)
                 
-                // Clear website data for this webview
+                // Clear ALL website data for this webview
                 let dataStore = automationWebView.configuration.websiteDataStore
                 let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
                 dataStore.removeData(ofTypes: dataTypes, modifiedSince: Date(timeIntervalSince1970: 0)) {
-                    passageLogger.debug("[WEBVIEW] Automation webview data cleared")
+                    passageLogger.debug("[WEBVIEW] ALL automation webview data cleared (cookies, localStorage, sessionStorage)")
                 }
             }
             
@@ -1268,7 +1318,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             // Additionally reset the main URL property to empty for next session
             self.url = ""
             
-            passageLogger.info("[WEBVIEW] Both webview states and URLs cleared successfully")
+            passageLogger.info("[WEBVIEW] ALL webview data cleared successfully")
         }
     }
     
@@ -1483,13 +1533,21 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
         // Handle pull-down dismissal
-        passageLogger.debug("Modal dismissed via pull-down gesture")
+        passageLogger.info("[WEBVIEW] ========== PRESENTATION CONTROLLER DID DISMISS ==========")
+        passageLogger.info("[WEBVIEW] Delegate exists: \(delegate != nil)")
+        passageLogger.debug("[WEBVIEW] Delegate type: \(String(describing: delegate))")
         
         // Reset URL state immediately when modal is dismissed
         resetURLState()
         
-        onClose?()
-        delegate?.webViewModalDidClose()
+        // Only call delegate method to avoid duplicate handleClose calls
+        // The delegate (PassageSDK) will handle the close logic
+        if let delegate = delegate {
+            passageLogger.info("[WEBVIEW] Calling delegate.webViewModalDidClose()")
+            delegate.webViewModalDidClose()
+        } else {
+            passageLogger.error("[WEBVIEW] ❌ No delegate to call webViewModalDidClose()!")
+        }
     }
     
     // MARK: - Helper Methods

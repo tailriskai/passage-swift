@@ -466,8 +466,12 @@ class RemoteControlManager {
             passageAnalytics.trackRemoteControlConnectError(error: String(describing: data), attempt: 1)
             
             // Try to parse error details
-            if let errorArray = data as? [Any], !errorArray.isEmpty {
+            if let errorArray = data.first as? [Any], !errorArray.isEmpty {
                 for (index, item) in errorArray.enumerated() {
+                    passageLogger.error("[SOCKET EVENT] Error item \(index): \(item)")
+                }
+            } else if !data.isEmpty {
+                for (index, item) in data.enumerated() {
                     passageLogger.error("[SOCKET EVENT] Error item \(index): \(item)")
                 }
             }
@@ -1172,14 +1176,9 @@ class RemoteControlManager {
         // If no current screenshot available, try to capture a new one
         if let captureImageFunction = captureImageFunction {
             Task {
-                do {
-                    let screenshot = await captureImageFunction()
-                    passageLogger.debug("[REMOTE CONTROL] New screenshot captured: \(screenshot != nil ? "\(screenshot!.count) chars" : "nil")")
-                    completion(screenshot)
-                } catch {
-                    passageLogger.error("[REMOTE CONTROL] Error capturing screenshot: \(error)")
-                    completion(nil)
-                }
+                let screenshot = await captureImageFunction()
+                passageLogger.debug("[REMOTE CONTROL] New screenshot captured: \(screenshot != nil ? "\(screenshot!.count) chars" : "nil")")
+                completion(screenshot)
             }
         } else {
             passageLogger.debug("[REMOTE CONTROL] No screenshot capture function available")
@@ -1369,7 +1368,7 @@ class RemoteControlManager {
                 )
                 
                 Task {
-                    await self.sendResult(result)
+                    self.sendResult(result)
                     
                     // Call success callback if available
                     if let onSuccess = self.onSuccess,
@@ -1416,7 +1415,7 @@ class RemoteControlManager {
                 )
                 
                 Task {
-                    await self.sendResult(result)
+                    self.sendResult(result)
                     passageLogger.info("[REMOTE CONTROL] Recording data captured successfully")
                     continuation.resume()
                 }
@@ -1438,10 +1437,21 @@ class RemoteControlManager {
                     "intentToken": intentToken ?? ""
                 ]
                 
+                // Use an atomic flag to ensure continuation is only resumed once
+                let resumeState = NSMutableDictionary()
+                resumeState["hasResumed"] = false
+                let resumeLock = NSLock()
+                
                 // Set up one-time listener for acknowledgment
                 let onAck: () -> Void = {
-                    passageLogger.debug("[REMOTE CONTROL] Received modalExit acknowledgment")
-                    continuation.resume()
+                    resumeLock.lock()
+                    defer { resumeLock.unlock() }
+                    
+                    if !(resumeState["hasResumed"] as? Bool ?? true) {
+                        resumeState["hasResumed"] = true
+                        passageLogger.debug("[REMOTE CONTROL] Received modalExit acknowledgment")
+                        continuation.resume()
+                    }
                 }
                 
                 // Emit with callback for acknowledgment
@@ -1449,8 +1459,14 @@ class RemoteControlManager {
                 
                 // Fallback timeout in case server doesn't respond
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    passageLogger.debug("[REMOTE CONTROL] modalExit timeout, proceeding anyway")
-                    continuation.resume()
+                    resumeLock.lock()
+                    defer { resumeLock.unlock() }
+                    
+                    if !(resumeState["hasResumed"] as? Bool ?? true) {
+                        resumeState["hasResumed"] = true
+                        passageLogger.debug("[REMOTE CONTROL] modalExit timeout, proceeding anyway")
+                        continuation.resume()
+                    }
                 }
             } else {
                 // If not connected, resolve immediately

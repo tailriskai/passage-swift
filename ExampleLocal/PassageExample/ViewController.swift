@@ -6,10 +6,21 @@ class ViewController: UIViewController {
     
     private var titleLabel: UILabel!
     private var connectButton: UIButton!
+    private var initializeButton: UIButton!
     private var resultTextView: UITextView!
     private var integrationLabel: UILabel!
     private var integrationButton: UIButton!
+    private var tokenLabel: UILabel!
+    private var tokenTextView: UITextView!
+    private var modeSegmentedControl: UISegmentedControl!
     private var selectedIntegration: String = "kroger"
+    private var exitCallCount: Int = 0  // Track onExit callback calls
+    private var isInitialized: Bool = false  // Track SDK initialization state
+    
+    // Constraint references for dynamic layout
+    private var connectButtonTopConstraint: NSLayoutConstraint!
+    private var initializeButtonTopConstraint: NSLayoutConstraint!
+    private var resultTextViewTopConstraint: NSLayoutConstraint!
     
     private let integrationOptions: [(value: String, label: String)] = [
         ("passage-test-captcha", "Passage Test Integration (with CAPTCHA)"),
@@ -71,6 +82,13 @@ class ViewController: UIViewController {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(titleLabel)
         
+        // Mode Segmented Control
+        modeSegmentedControl = UISegmentedControl(items: ["Auto-Fetch Token", "Manual Token"])
+        modeSegmentedControl.selectedSegmentIndex = 0
+        modeSegmentedControl.translatesAutoresizingMaskIntoConstraints = false
+        modeSegmentedControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
+        view.addSubview(modeSegmentedControl)
+        
         // Integration Label
         integrationLabel = UILabel()
         integrationLabel.text = "Integration Type:"
@@ -93,6 +111,57 @@ class ViewController: UIViewController {
         integrationButton.translatesAutoresizingMaskIntoConstraints = false
         integrationButton.addTarget(self, action: #selector(integrationButtonTapped), for: .touchUpInside)
         view.addSubview(integrationButton)
+        
+        // Token Label
+        tokenLabel = UILabel()
+        tokenLabel.text = "Intent Token:"
+        tokenLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        tokenLabel.textColor = .label
+        tokenLabel.translatesAutoresizingMaskIntoConstraints = false
+        tokenLabel.isHidden = true  // Hidden by default (auto-fetch mode)
+        view.addSubview(tokenLabel)
+        
+        // Token Text View (better for handling long tokens)
+        tokenTextView = UITextView()
+        tokenTextView.text = ""
+        tokenTextView.font = .systemFont(ofSize: 14)
+        tokenTextView.backgroundColor = .systemGray6
+        tokenTextView.layer.cornerRadius = 8
+        tokenTextView.layer.borderWidth = 1
+        tokenTextView.layer.borderColor = UIColor.systemGray4.cgColor
+        tokenTextView.textContainerInset = UIEdgeInsets(top: 12, left: 8, bottom: 12, right: 8)
+        tokenTextView.isScrollEnabled = true
+        tokenTextView.showsVerticalScrollIndicator = true
+        tokenTextView.translatesAutoresizingMaskIntoConstraints = false
+        tokenTextView.isHidden = true  // Hidden by default (auto-fetch mode)
+        tokenTextView.delegate = self
+        view.addSubview(tokenTextView)
+        
+        // Add placeholder label for the text view
+        let placeholderLabel = UILabel()
+        placeholderLabel.text = "Paste intent token here..."
+        placeholderLabel.font = .systemFont(ofSize: 14)
+        placeholderLabel.textColor = .placeholderText
+        placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
+        placeholderLabel.tag = 999 // Tag to identify placeholder
+        tokenTextView.addSubview(placeholderLabel)
+        
+        NSLayoutConstraint.activate([
+            placeholderLabel.topAnchor.constraint(equalTo: tokenTextView.topAnchor, constant: 16),
+            placeholderLabel.leadingAnchor.constraint(equalTo: tokenTextView.leadingAnchor, constant: 12)
+        ])
+        
+        // Initialize Button
+        initializeButton = UIButton(type: .system)
+        initializeButton.setTitle("Initialize SDK", for: .normal)
+        initializeButton.titleLabel?.font = .systemFont(ofSize: 18, weight: .medium)
+        initializeButton.backgroundColor = .systemGreen
+        initializeButton.setTitleColor(.white, for: .normal)
+        initializeButton.layer.cornerRadius = 8
+        initializeButton.translatesAutoresizingMaskIntoConstraints = false
+        initializeButton.addTarget(self, action: #selector(initializeButtonTapped), for: .touchUpInside)
+        initializeButton.isHidden = true  // Hidden by default (auto-fetch mode)
+        view.addSubview(initializeButton)
         
         // Connect Button
         connectButton = UIButton(type: .system)
@@ -123,35 +192,65 @@ class ViewController: UIViewController {
 
         
         // Set up constraints
+        // Create dynamic constraints for button positioning
+        connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: integrationButton.bottomAnchor, constant: 30)
+        initializeButtonTopConstraint = initializeButton.topAnchor.constraint(equalTo: tokenTextView.bottomAnchor, constant: 20)
+        resultTextViewTopConstraint = resultTextView.topAnchor.constraint(equalTo: connectButton.bottomAnchor, constant: 20)
+        
         NSLayoutConstraint.activate([
             // Title Label
-            titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
+            titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             
-            // Integration Label
-            integrationLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 30),
+            // Mode Segmented Control
+            modeSegmentedControl.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
+            modeSegmentedControl.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            modeSegmentedControl.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            
+            // Integration Label (for auto-fetch mode)
+            integrationLabel.topAnchor.constraint(equalTo: modeSegmentedControl.bottomAnchor, constant: 20),
             integrationLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             integrationLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             
-            // Integration Button
+            // Integration Button (for auto-fetch mode)
             integrationButton.topAnchor.constraint(equalTo: integrationLabel.bottomAnchor, constant: 8),
             integrationButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             integrationButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             integrationButton.heightAnchor.constraint(equalToConstant: 44),
             
-            // Connect Button
-            connectButton.topAnchor.constraint(equalTo: integrationButton.bottomAnchor, constant: 30),
+            // Token Label (for manual mode)
+            tokenLabel.topAnchor.constraint(equalTo: modeSegmentedControl.bottomAnchor, constant: 20),
+            tokenLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            tokenLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            
+            // Token Text View (for manual mode)
+            tokenTextView.topAnchor.constraint(equalTo: tokenLabel.bottomAnchor, constant: 8),
+            tokenTextView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            tokenTextView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            tokenTextView.heightAnchor.constraint(equalToConstant: 80),
+            
+            // Initialize Button (for manual mode) - positioned dynamically
+            initializeButtonTopConstraint,
+            initializeButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            initializeButton.widthAnchor.constraint(equalToConstant: 200),
+            initializeButton.heightAnchor.constraint(equalToConstant: 50),
+            
+            // Connect Button (positioned dynamically based on mode)
+            connectButtonTopConstraint,
             connectButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             connectButton.widthAnchor.constraint(equalToConstant: 200),
             connectButton.heightAnchor.constraint(equalToConstant: 50),
             
             // Result Text View
-            resultTextView.topAnchor.constraint(equalTo: connectButton.bottomAnchor, constant: 30),
+            resultTextViewTopConstraint,
             resultTextView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             resultTextView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             resultTextView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20)
         ])
+        
+        // Set initial mode state
+        modeChanged()
     }
     
     private func getSelectedIntegrationLabel() -> String {
@@ -187,34 +286,177 @@ class ViewController: UIViewController {
         present(alertController, animated: true)
     }
     
+    @objc private func modeChanged() {
+        let isManualMode = modeSegmentedControl.selectedSegmentIndex == 1
+        
+        // Show/hide manual token controls
+        tokenLabel.isHidden = !isManualMode
+        tokenTextView.isHidden = !isManualMode
+        initializeButton.isHidden = !isManualMode
+        
+        // Update integration label visibility
+        integrationLabel.isHidden = isManualMode
+        integrationButton.isHidden = isManualMode
+        
+        // Update button positioning constraints
+        connectButtonTopConstraint.isActive = false
+        initializeButtonTopConstraint.isActive = false
+        
+        if isManualMode {
+            // In manual mode, both buttons use the same position (below token text view)
+            connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: tokenTextView.bottomAnchor, constant: 20)
+            initializeButtonTopConstraint = initializeButton.topAnchor.constraint(equalTo: tokenTextView.bottomAnchor, constant: 20)
+        } else {
+            // In auto-fetch mode, position connect button below integration button
+            connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: integrationButton.bottomAnchor, constant: 30)
+            // Initialize button constraint doesn't matter in auto-fetch mode since it's hidden
+            initializeButtonTopConstraint = initializeButton.topAnchor.constraint(equalTo: tokenTextView.bottomAnchor, constant: 20)
+        }
+        
+        connectButtonTopConstraint.isActive = true
+        initializeButtonTopConstraint.isActive = true
+        
+        // Reset initialization state when switching modes
+        if !isManualMode {
+            isInitialized = false
+        }
+        
+        // Update button states based on mode
+        if isManualMode {
+            updateButtonStates()
+        } else {
+            // In auto-fetch mode, always show connect button and hide initialize button
+            initializeButton.isHidden = true
+            connectButton.isHidden = false
+            connectButton.setTitle("Connect", for: .normal)
+            connectButton.isEnabled = true
+            connectButton.backgroundColor = .systemBlue
+        }
+        
+        // Update result text view constraint to reference the visible button
+        updateResultTextViewConstraint()
+        
+        print("Mode changed to: \(isManualMode ? "Manual Token" : "Auto-Fetch Token")")
+    }
+    
+    private func updateButtonStates() {
+        let isManualMode = modeSegmentedControl.selectedSegmentIndex == 1
+        guard isManualMode else { return }
+        
+        let hasToken = !(tokenTextView.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        
+        if !isInitialized {
+            // Show only initialize button when not initialized
+            initializeButton.isHidden = false
+            connectButton.isHidden = true
+            
+            initializeButton.isEnabled = hasToken
+            initializeButton.backgroundColor = hasToken ? .systemGreen : .systemGray
+            initializeButton.setTitle(hasToken ? "Initialize SDK" : "Enter Token First", for: .normal)
+        } else {
+            // Show only connect button when initialized
+            initializeButton.isHidden = true
+            connectButton.isHidden = false
+            
+            connectButton.isEnabled = true
+            connectButton.backgroundColor = .systemBlue
+            connectButton.setTitle("Open Passage", for: .normal)
+        }
+        
+        // Update result text view constraint to reference the visible button
+        updateResultTextViewConstraint()
+    }
+    
+    private func updateResultTextViewConstraint() {
+        resultTextViewTopConstraint.isActive = false
+        
+        let isManualMode = modeSegmentedControl.selectedSegmentIndex == 1
+        
+        if isManualMode {
+            // In manual mode, reference whichever button is currently visible
+            if !initializeButton.isHidden {
+                resultTextViewTopConstraint = resultTextView.topAnchor.constraint(equalTo: initializeButton.bottomAnchor, constant: 20)
+            } else {
+                resultTextViewTopConstraint = resultTextView.topAnchor.constraint(equalTo: connectButton.bottomAnchor, constant: 20)
+            }
+        } else {
+            // In auto-fetch mode, always reference connect button
+            resultTextViewTopConstraint = resultTextView.topAnchor.constraint(equalTo: connectButton.bottomAnchor, constant: 20)
+        }
+        
+        resultTextViewTopConstraint.isActive = true
+    }
+    
+    @objc private func initializeButtonTapped() {
+        print("\n========== INITIALIZE BUTTON TAPPED ==========")
+        
+        guard let token = tokenTextView.text, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            resultTextView.text = "❌ Please enter an intent token"
+            return
+        }
+        
+        // Disable button and show loading state
+        initializeButton.isEnabled = false
+        initializeButton.setTitle("Initializing...", for: .normal)
+        resultTextView.text = "Initializing SDK with provided token...\n\nCheck console logs for detailed debugging information."
+        
+        // Parse JWT to check details
+        logTokenDetails(token)
+        
+        // Initialize SDK with the provided token
+        initializeSDK(with: token)
+    }
+    
     @objc private func connectButtonTapped() {
         print("\n========== CONNECT BUTTON TAPPED ==========")
         print("Current time: \(Date())")
         
-        // Disable button and show loading state
-        connectButton.isEnabled = false
-        connectButton.setTitle("Fetching token...", for: .normal)
-        resultTextView.text = "Fetching intent token...\n\nCheck console logs for detailed debugging information."
+        let isManualMode = modeSegmentedControl.selectedSegmentIndex == 1
         
-        // Fetch intent token from API
-        fetchIntentToken { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let intentToken):
-                    print("Successfully fetched intent token")
-                    self?.connectButton.setTitle("Opening Passage...", for: .normal)
-                    self?.resultTextView.text = "Opening Passage...\n\nCheck console logs for detailed debugging information."
-                    
-                    // Parse JWT to check details
-                    self?.logTokenDetails(intentToken)
-                    
-                    self?.openPassage(with: intentToken)
-                    
-                case .failure(let error):
-                    print("Failed to fetch intent token: \(error)")
-                    self?.connectButton.isEnabled = true
-                    self?.connectButton.setTitle("Connect", for: .normal)
-                    self?.resultTextView.text = "❌ Failed to fetch intent token:\n\n\(error.localizedDescription)"
+        if isManualMode {
+            // Manual mode - use the token from text field
+            guard isInitialized else {
+                resultTextView.text = "❌ Please initialize the SDK first"
+                return
+            }
+            
+            guard let token = tokenTextView.text, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                resultTextView.text = "❌ Please enter an intent token"
+                return
+            }
+            
+            // Disable button and show loading state
+            connectButton.isEnabled = false
+            connectButton.setTitle("Opening Passage...", for: .normal)
+            resultTextView.text = "Opening Passage with initialized SDK...\n\nCheck console logs for detailed debugging information."
+            
+            openPassage(with: token)
+        } else {
+            // Auto-fetch mode - fetch token from API
+            connectButton.isEnabled = false
+            connectButton.setTitle("Fetching token...", for: .normal)
+            resultTextView.text = "Fetching intent token...\n\nCheck console logs for detailed debugging information."
+            
+            // Fetch intent token from API
+            fetchIntentToken { [weak self] result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let intentToken):
+                        print("Successfully fetched intent token")
+                        self?.connectButton.setTitle("Opening Passage...", for: .normal)
+                        self?.resultTextView.text = "Opening Passage...\n\nCheck console logs for detailed debugging information."
+                        
+                        // Parse JWT to check details
+                        self?.logTokenDetails(intentToken)
+                        
+                        self?.openPassage(with: intentToken)
+                        
+                    case .failure(let error):
+                        print("Failed to fetch intent token: \(error)")
+                        self?.connectButton.isEnabled = true
+                        self?.connectButton.setTitle("Connect", for: .normal)
+                        self?.resultTextView.text = "❌ Failed to fetch intent token:\n\n\(error.localizedDescription)"
+                    }
                 }
             }
         }
@@ -251,6 +493,87 @@ class ViewController: UIViewController {
                 }
             }
         }
+    }
+    
+    // MARK: - SDK Initialize method
+    private func initializeSDK(with token: String) {
+        print("\n========== INITIALIZING SDK ==========")
+        print("Calling Passage.shared.initialize")
+        
+        // Extract publishable key from token (if available) or use a default
+        let publishableKey = extractPublishableKey(from: token) ?? "pk-live-0d017c4c-307e-441c-8b72-cb60f64f77f8"
+        
+        let options = PassageInitializeOptions(
+            publishableKey: publishableKey,
+            prompts: nil, // No prompts for now
+            onConnectionComplete: { [weak self] (data: PassageSuccessData) in
+                print("\n✅ INITIALIZE - CONNECTION COMPLETE CALLBACK TRIGGERED")
+                self?.handleSuccess(data)
+            },
+            onError: { [weak self] (error: PassageErrorData) in
+                print("\n❌ INITIALIZE - CONNECTION ERROR CALLBACK TRIGGERED")
+                self?.handleError(error)
+            },
+            onDataComplete: { [weak self] (data: PassageDataResult) in
+                print("\n📊 INITIALIZE - DATA COMPLETE CALLBACK TRIGGERED")
+                self?.handleDataComplete(data)
+            },
+            onPromptComplete: { [weak self] (prompt: PassagePromptResponse) in
+                print("\n🎯 INITIALIZE - PROMPT COMPLETE CALLBACK TRIGGERED")
+                self?.handlePromptComplete(prompt)
+            },
+            onExit: { [weak self] (reason: String?) in
+                self?.exitCallCount += 1
+                print("\n🚪 INITIALIZE - EXIT CALLBACK TRIGGERED #\(self?.exitCallCount ?? 0) - Reason: \(reason ?? "unknown")")
+                print("Total exit callbacks received: \(self?.exitCallCount ?? 0)")
+                self?.handleClose()
+            }
+        )
+        
+        Task {
+            do {
+                try await Passage.shared.initialize(options)
+                
+                DispatchQueue.main.async { [weak self] in
+                    print("✅ SDK initialized successfully")
+                    self?.isInitialized = true
+                    
+                    // Update button states based on current token
+                    self?.updateButtonStates()
+                    
+                    self?.resultTextView.text = "✅ SDK initialized successfully!\n\nYou can now open Passage with the provided token.\n\nPublishable Key: \(publishableKey)"
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    print("❌ SDK initialization failed: \(error)")
+                    
+                    // Update button states to reflect failure
+                    self?.updateButtonStates()
+                    
+                    self?.resultTextView.text = "❌ SDK initialization failed:\n\n\(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func extractPublishableKey(from token: String) -> String? {
+        // Try to extract publishable key from JWT token
+        let components = token.components(separatedBy: ".")
+        guard components.count == 3 else { return nil }
+        
+        let payload = components[1]
+        guard let data = Data(base64Encoded: addPadding(to: payload)) else { return nil }
+        
+        do {
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let clientId = json["clientId"] as? String {
+                return clientId
+            }
+        } catch {
+            print("Failed to decode publishable key from intent token: \(error)")
+        }
+        
+        return nil
     }
     
     // MARK: - API fetch method
@@ -375,7 +698,9 @@ class ViewController: UIViewController {
                 self?.handlePromptComplete(prompt)
             },
             onExit: { [weak self] (reason: String?) in
-                print("\n🚪 EXIT CALLBACK TRIGGERED - Reason: \(reason ?? "unknown")")
+                self?.exitCallCount += 1
+                print("\n🚪 EXIT CALLBACK TRIGGERED #\(self?.exitCallCount ?? 0) - Reason: \(reason ?? "unknown")")
+                print("Total exit callbacks received: \(self?.exitCallCount ?? 0)")
                 self?.handleClose()
             },
             onWebviewChange: { [weak self] (webviewType: String) in
@@ -409,7 +734,9 @@ class ViewController: UIViewController {
                 self?.handlePromptComplete(prompt)
             },
             onExit: { [weak self] (reason: String?) in
-                print("\n🚪 EXIT CALLBACK TRIGGERED - Reason: \(reason ?? "unknown")")
+                self?.exitCallCount += 1
+                print("\n🚪 EXIT CALLBACK TRIGGERED #\(self?.exitCallCount ?? 0) - Reason: \(reason ?? "unknown")")
+                print("Total exit callbacks received: \(self?.exitCallCount ?? 0)")
                 self?.handleClose()
             },
             onWebviewChange: { [weak self] (webviewType: String) in
@@ -423,9 +750,19 @@ class ViewController: UIViewController {
     
     private func handleSuccess(_ data: PassageSuccessData) {
         DispatchQueue.main.async { [weak self] in
-            self?.connectButton.isEnabled = true
-            self?.connectButton.setTitle("Connect", for: .normal)
-            self?.displayResult(data, isError: false)
+            guard let self = self else { return }
+            
+            let isManualMode = self.modeSegmentedControl.selectedSegmentIndex == 1
+            
+            if isManualMode {
+                self.updateButtonStates()
+            } else {
+                self.connectButton.isEnabled = true
+                self.connectButton.setTitle("Connect", for: .normal)
+                self.connectButton.backgroundColor = .systemBlue
+            }
+            
+            self.displayResult(data, isError: false)
         }
     }
     
@@ -435,9 +772,19 @@ class ViewController: UIViewController {
         print("  - Error data: \(String(describing: error.data))")
         
         DispatchQueue.main.async { [weak self] in
-            self?.connectButton.isEnabled = true
-            self?.connectButton.setTitle("Connect", for: .normal)
-            self?.displayResult(error, isError: true)
+            guard let self = self else { return }
+            
+            let isManualMode = self.modeSegmentedControl.selectedSegmentIndex == 1
+            
+            if isManualMode {
+                self.updateButtonStates()
+            } else {
+                self.connectButton.isEnabled = true
+                self.connectButton.setTitle("Connect", for: .normal)
+                self.connectButton.backgroundColor = .systemBlue
+            }
+            
+            self.displayResult(error, isError: true)
         }
     }
     
@@ -474,10 +821,22 @@ class ViewController: UIViewController {
     
     private func handleClose() {
         DispatchQueue.main.async { [weak self] in
-            self?.connectButton.isEnabled = true
-            self?.connectButton.setTitle("Connect", for: .normal)
-            if self?.resultTextView.text == "Opening Passage..." || self?.resultTextView.text?.contains("Automation Active") == true {
-                self?.resultTextView.text = "Passage closed"
+            guard let self = self else { return }
+            
+            let isManualMode = self.modeSegmentedControl.selectedSegmentIndex == 1
+            
+            if isManualMode {
+                self.updateButtonStates()
+            } else {
+                self.connectButton.isEnabled = true
+                self.connectButton.setTitle("Connect", for: .normal)
+                self.connectButton.backgroundColor = .systemBlue
+            }
+            
+            if self.resultTextView.text == "Opening Passage..." || 
+               self.resultTextView.text?.contains("Automation Active") == true ||
+               self.resultTextView.text?.contains("Opening Passage with initialized SDK") == true {
+                self.resultTextView.text = "Passage closed\n\nTotal onExit callbacks received: \(self.exitCallCount)"
             }
         }
     }
@@ -567,5 +926,38 @@ class ViewController: UIViewController {
         }
         
         resultTextView.text = resultText
+    }
+}
+
+// MARK: - UITextViewDelegate
+extension ViewController: UITextViewDelegate {
+    func textViewDidChange(_ textView: UITextView) {
+        if textView == tokenTextView {
+            // Update placeholder visibility
+            if let placeholderLabel = textView.viewWithTag(999) as? UILabel {
+                placeholderLabel.isHidden = !textView.text.isEmpty
+            }
+            
+            // Update button states
+            updateButtonStates()
+        }
+    }
+    
+    func textViewDidBeginEditing(_ textView: UITextView) {
+        if textView == tokenTextView {
+            // Hide placeholder when editing begins
+            if let placeholderLabel = textView.viewWithTag(999) as? UILabel {
+                placeholderLabel.isHidden = true
+            }
+        }
+    }
+    
+    func textViewDidEndEditing(_ textView: UITextView) {
+        if textView == tokenTextView {
+            // Show placeholder if text is empty
+            if let placeholderLabel = textView.viewWithTag(999) as? UILabel {
+                placeholderLabel.isHidden = !textView.text.isEmpty
+            }
+        }
     }
 }

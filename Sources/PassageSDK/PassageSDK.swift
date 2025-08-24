@@ -158,6 +158,9 @@ public class Passage: NSObject {
     // Configuration
     private var config: PassageConfig
     
+    // Debug: Track instance lifecycle
+    private let instanceId = UUID().uuidString
+    
     // WebView components - reusable instance
     private var webViewController: WebViewModalViewController?
     private var navigationController: UINavigationController?
@@ -165,6 +168,10 @@ public class Passage: NSObject {
     
     // Remote control
     private var remoteControl: RemoteControlManager?
+    
+    // State management
+    private var isClosing: Bool = false
+    private var modalPresentationTimer: Timer?
     
     // Callbacks - matching React Native SDK structure
     private var onConnectionComplete: ((PassageSuccessData) -> Void)?
@@ -180,8 +187,10 @@ public class Passage: NSObject {
     private override init() {
         self.config = PassageConfig()
         super.init()
-        passageLogger.debug("PassageSDK initialized")
+        passageLogger.info("[SDK] PassageSDK initialized - Instance ID: \(instanceId.prefix(8))")
     }
+    
+
     
     // MARK: - Public Methods
     
@@ -276,11 +285,27 @@ public class Passage: NSObject {
         onExit: ((String?) -> Void)? = nil,
         onWebviewChange: ((String) -> Void)? = nil
     ) {
-        passageLogger.info("[SDK] Opening Passage")
-        passageLogger.debug("[SDK] Token length: \(token.count), Style: \(presentationStyle)")
+        passageLogger.info("[SDK:\(instanceId.prefix(8))] ========== OPEN() CALLED ==========")
+        passageLogger.debug("[SDK:\(instanceId.prefix(8))] Token length: \(token.count), Style: \(presentationStyle)")
+        passageLogger.debug("[SDK:\(instanceId.prefix(8))] Current isClosing state: \(isClosing)")
+        passageLogger.debug("[SDK:\(instanceId.prefix(8))] Current onExit callback: \(self.onExit != nil ? "exists" : "nil")")
         passageAnalytics.trackOpenRequest(token: token)
         
+        // Reset closing flag for new session - must be done synchronously before storing callbacks
+        passageLogger.info("[SDK] Resetting isClosing flag from \(isClosing) to false")
+        isClosing = false
+        
         // Store callbacks
+        passageLogger.info("[SDK] Storing new callbacks...")
+        passageLogger.debug("[SDK] Previous onExit: \(self.onExit != nil ? "existed" : "nil")")
+        passageLogger.info("[SDK] Thread info - isMainThread: \(Thread.isMainThread)")
+        
+        // Debug callback identity
+        if let existingExit = self.onExit {
+            passageLogger.warn("[SDK] ⚠️ onExit callback already exists! This shouldn't happen after cleanup")
+            passageLogger.debug("[SDK] Existing callback identity: \(String(describing: existingExit))")
+        }
+        
         self.onConnectionComplete = onConnectionComplete
         self.onConnectionError = onConnectionError
         self.onDataComplete = onDataComplete
@@ -288,7 +313,13 @@ public class Passage: NSObject {
         self.onExit = onExit
         self.onWebviewChange = onWebviewChange
         
-        passageLogger.debug("[SDK] Callbacks stored - onExit: \(onExit != nil ? "set" : "nil")")
+        passageLogger.info("[SDK] Callbacks stored - onExit: \(onExit != nil ? "SET" : "NIL")")
+        passageLogger.debug("[SDK] New onExit callback: \(self.onExit != nil ? "exists" : "nil")")
+        
+        // Double-check the callback was stored
+        if self.onExit == nil && onExit != nil {
+            passageLogger.error("[SDK] ❌ CRITICAL: onExit callback was not stored properly!")
+        }
         
         // Build URL from token
         let url = buildUrlFromToken(token)
@@ -328,9 +359,8 @@ public class Passage: NSObject {
                     self?.handleMessage(message)
                 }
                 
-                webVC.onClose = { [weak self] in
-                    self?.handleClose()
-                }
+                // Note: onClose is not set here to avoid duplicate calls
+                // The delegate method webViewModalDidClose will handle closing
                 
                 self.webViewController = webVC
             } else {
@@ -341,6 +371,10 @@ public class Passage: NSObject {
                 passageLogger.error("[SDK] Failed to create or get WebViewController")
                 return
             }
+            
+            // Ensure delegate is set (important for callbacks)
+            webVC.delegate = self
+            passageLogger.info("[SDK] WebViewController delegate set to self")
             
             // Update configuration for this open
             webVC.url = url
@@ -353,6 +387,7 @@ public class Passage: NSObject {
             
             // Create navigation controller if needed
             if self.navigationController == nil || self.navigationController?.viewControllers.first !== webVC {
+                passageLogger.info("[SDK] Creating new navigation controller")
                 let navController = UINavigationController(rootViewController: webVC)
                 navController.modalPresentationStyle = presentationStyle.modalPresentationStyle
                 
@@ -371,17 +406,47 @@ public class Passage: NSObject {
                 navController.presentationController?.delegate = webVC
                 
                 self.navigationController = navController
+            } else {
+                passageLogger.info("[SDK] Reusing existing navigation controller")
+                // Ensure delegate is still set when reusing
+                self.navigationController?.presentationController?.delegate = webVC
             }
             
             // Load the new URL
             webVC.loadURL(url)
             
-            // Present the modal
-            presentingVC.present(self.navigationController!, animated: true) {
-                // Initialize remote control if needed
-                self.initializeRemoteControl(with: token)
-                passageAnalytics.trackOpenSuccess(url: url)
+            // Check if navigation controller is already presented
+            if let navController = self.navigationController,
+               navController.presentingViewController != nil {
+                passageLogger.warn("[SDK] ⚠️ Navigation controller is already presented! Dismissing first...")
+                navController.dismiss(animated: false) { [weak self] in
+                    // Present again after dismissal
+                    self?.presentNavigationController(navController, from: presentingVC, token: token, url: url)
+                }
+            } else {
+                // Present the modal
+                self.presentNavigationController(self.navigationController!, from: presentingVC, token: token, url: url)
             }
+        }
+    }
+    
+    private func presentNavigationController(_ navController: UINavigationController, from presentingVC: UIViewController, token: String, url: String) {
+        passageLogger.info("[SDK] Presenting navigation controller...")
+        passageLogger.debug("[SDK] Presenting VC: \(presentingVC), Nav controller: \(navController)")
+        passageLogger.debug("[SDK] onExit before presentation: \(self.onExit != nil ? "exists" : "nil")")
+        
+        presentingVC.present(navController, animated: true) { [weak self] in
+            guard let self = self else {
+                passageLogger.error("[SDK] Self became nil during presentation!")
+                return
+            }
+            
+            passageLogger.info("[SDK] ✅ Modal presented successfully")
+            passageLogger.debug("[SDK] onExit callback after presentation: \(self.onExit != nil ? "exists" : "nil")")
+            
+            // Initialize remote control if needed
+            self.initializeRemoteControl(with: token)
+            passageAnalytics.trackOpenSuccess(url: url)
         }
     }
     
@@ -389,13 +454,29 @@ public class Passage: NSObject {
         passageLogger.debugMethod("close")
         
         DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Check if already closing
+            guard !self.isClosing else {
+                passageLogger.debug("[SDK] close() called but already closing, ignoring")
+                return
+            }
+            
+            self.isClosing = true
+            
             // Call onExit before dismissing
-            self?.onExit?("programmatic_close")
+            self.onExit?("programmatic_close")
             passageAnalytics.trackModalClosed(reason: "programmatic_close")
             
-            self?.navigationController?.dismiss(animated: true) {
+            self.navigationController?.dismiss(animated: true) { [weak self] in
+                guard let self = self else {
+                    passageLogger.error("[SDK] Self became nil during programmatic close!")
+                    return
+                }
+                
+                passageLogger.info("[SDK] Navigation controller dismissed (programmatic)")
                 // Don't cleanup webviews - keep them alive for reuse
-                self?.cleanupAfterClose()
+                self.cleanupAfterClose()
             }
         }
     }
@@ -438,6 +519,8 @@ public class Passage: NSObject {
         }
     }
     
+    /// Clear cookies for a specific URL only (preserves localStorage, sessionStorage, and other data)
+    /// Use clearWebViewData() if you want to clear everything including localStorage and sessionStorage
     public func clearCookies(for url: String) {
         guard let urlObj = URL(string: url) else { return }
         
@@ -456,8 +539,10 @@ public class Passage: NSObject {
         }
     }
     
+    /// Clear all cookies only (preserves localStorage, sessionStorage, and other data)
+    /// Use clearWebViewData() if you want to clear everything including localStorage and sessionStorage
     public func clearAllCookies() {
-        passageLogger.info("[SDK] Clearing all cookies")
+        passageLogger.info("[SDK] Clearing all cookies only (preserving localStorage, sessionStorage)")
         
         DispatchQueue.main.async {
             WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
@@ -473,15 +558,30 @@ public class Passage: NSObject {
     }
     
     public func clearWebViewState() {
-        passageLogger.info("[SDK] Clearing webview state")
+        passageLogger.info("[SDK] Clearing webview navigation state (preserving cookies, localStorage, sessionStorage)")
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
-            // Clear webview state by resetting both webviews
+            // Clear webview navigation state only - preserves cookies, localStorage, sessionStorage
             self.webViewController?.clearWebViewState()
             
-            passageLogger.info("[SDK] WebView state cleared successfully")
+            passageLogger.info("[SDK] WebView navigation state cleared successfully")
+        }
+    }
+    
+    /// Clear all webview data including cookies, localStorage, sessionStorage
+    /// This is a manual method that should be called when you want to completely reset the webview state
+    public func clearWebViewData() {
+        passageLogger.info("[SDK] Clearing ALL webview data including cookies, localStorage, sessionStorage")
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Clear all webview data including cookies, localStorage, sessionStorage
+            self.webViewController?.clearWebViewData()
+            
+            passageLogger.info("[SDK] ALL WebView data cleared successfully")
         }
     }
     
@@ -607,7 +707,8 @@ public class Passage: NSObject {
                 handleConnectionError(data)
                 
             case "CLOSE_MODAL":
-                passageLogger.info("[SDK] 🚪 CLOSE MODAL")
+                passageLogger.info("[SDK] 🚪 CLOSE MODAL message received from WebView")
+                passageLogger.debug("[SDK] Current state - isClosing: \(isClosing), onExit: \(onExit != nil ? "exists" : "nil")")
                 close()
                 
             case "page_loaded":
@@ -686,8 +787,20 @@ public class Passage: NSObject {
             onDataComplete?(dataResult)
         }
         
+        // Mark as closing to prevent duplicate close handling
+        isClosing = true
         passageAnalytics.trackModalClosed(reason: "success")
-        navigationController?.dismiss(animated: true) {
+        
+        passageLogger.info("[SDK] Dismissing navigation controller from success handler...")
+        navigationController?.dismiss(animated: true) { [weak self] in
+            guard let self = self else {
+                passageLogger.error("[SDK] Self became nil during dismiss animation!")
+                return
+            }
+            
+            passageLogger.info("[SDK] Navigation controller dismissed (success)")
+            passageLogger.debug("[SDK] onExit after dismiss: \(self.onExit != nil ? "exists" : "nil")")
+            
             // Clear webview state after successful connection before cleanup
             self.clearWebViewState()
             self.cleanupAfterClose()
@@ -700,6 +813,9 @@ public class Passage: NSObject {
         
         onConnectionError?(errorData)
         passageAnalytics.trackOnError(error: error, data: data)
+        
+        // Mark as closing to prevent duplicate close handling
+        isClosing = true
         passageAnalytics.trackModalClosed(reason: "error")
         navigationController?.dismiss(animated: true) {
             // Clear webview state after error before cleanup
@@ -709,11 +825,38 @@ public class Passage: NSObject {
     }
     
     private func handleClose() {
-        passageLogger.debug("[SDK] handleClose called - user manually closed modal")
-        passageLogger.debug("[SDK] onExit callback: \(onExit != nil ? "available" : "nil")")
-        onExit?("user_action")
-        passageAnalytics.trackModalClosed(reason: "user_action")
-        // Clear webview state when user manually closes modal
+        passageLogger.info("[SDK:\(instanceId.prefix(8))] ========== HANDLE CLOSE CALLED ==========")
+        passageLogger.info("[SDK:\(instanceId.prefix(8))] Current isClosing: \(isClosing)")
+        passageLogger.info("[SDK:\(instanceId.prefix(8))] Current onExit callback: \(onExit != nil ? "EXISTS" : "NIL")")
+        passageLogger.debug("[SDK:\(instanceId.prefix(8))] Thread: \(Thread.isMainThread ? "Main" : "Background")")
+        
+        // Always call onExit if available, even if already closing
+        // This ensures the callback is not missed due to race conditions
+        if onExit != nil && !isClosing {
+            passageLogger.info("[SDK] ✅ Calling onExit callback with reason: user_action")
+            onExit?("user_action")
+            passageAnalytics.trackModalClosed(reason: "user_action")
+        } else {
+            passageLogger.warn("[SDK] ❌ NOT calling onExit - onExit: \(onExit != nil), isClosing: \(isClosing)")
+            if onExit == nil {
+                passageLogger.error("[SDK] ⚠️ onExit is NIL - this is why callback isn't firing!")
+            }
+            if isClosing {
+                passageLogger.warn("[SDK] ⚠️ isClosing is true - preventing callback")
+            }
+        }
+        
+        // Prevent duplicate cleanup
+        guard !isClosing else {
+            passageLogger.warn("[SDK] Already closing, skipping duplicate cleanup")
+            return
+        }
+        
+        passageLogger.info("[SDK] Setting isClosing to true")
+        isClosing = true
+        
+        // Clear webview state and perform cleanup
+        passageLogger.debug("[SDK] Clearing webview state and performing cleanup")
         clearWebViewState()
         cleanupAfterClose()
     }
@@ -741,27 +884,37 @@ public class Passage: NSObject {
     }
     
     private func cleanupAfterClose() {
-        // Emit modalExit and disconnect remote control
-        Task {
-            await remoteControl?.emitModalExit()
-            remoteControl?.disconnect()
-        }
-        
-        navigationCompletionHandler = nil
-        
-        // Clear all callback references to prevent stale callbacks in next session
-        onConnectionComplete = nil
-        onConnectionError = nil
-        onDataComplete = nil
-        onPromptComplete = nil
-        onExit = nil
-        onWebviewChange = nil
+        passageLogger.info("[SDK] ========== CLEANUP AFTER CLOSE ==========")
+        passageLogger.debug("[SDK] Current onExit before cleanup: \(onExit != nil ? "exists" : "nil")")
+        passageLogger.info("[SDK] Cleanup called on thread - isMainThread: \(Thread.isMainThread)")
         
         // Reset webview URLs to ensure clean state for next session
         webViewController?.resetURLState()
         
-        // Don't nil out webViewController - keep it for reuse
-        passageLogger.debug("[SDK] Cleanup after close completed, callbacks cleared, webviews kept alive, URLs reset")
+        // Clear callbacks synchronously first to prevent race conditions
+        passageLogger.info("[SDK] Clearing callbacks SYNCHRONOUSLY first...")
+        self.navigationCompletionHandler = nil
+        self.onConnectionComplete = nil
+        self.onConnectionError = nil
+        self.onDataComplete = nil
+        self.onPromptComplete = nil
+        self.onExit = nil
+        self.onWebviewChange = nil
+        passageLogger.info("[SDK] Callbacks cleared synchronously - onExit is now: \(self.onExit != nil ? "STILL EXISTS??" : "nil")")
+        
+        // Emit modalExit and disconnect remote control asynchronously
+        Task { @MainActor in
+            passageLogger.debug("[SDK] Async cleanup - emitting modalExit and disconnecting remote control...")
+            await remoteControl?.emitModalExit()
+            remoteControl?.disconnect()
+            
+            // Reset closing flag after everything is complete
+            // This must be the last thing we do to ensure all cleanup is done
+            passageLogger.info("[SDK] Resetting isClosing flag from true to false")
+            self.isClosing = false
+            
+            passageLogger.info("[SDK] ✅ Async cleanup completed - isClosing: \(self.isClosing)")
+        }
     }
     
     private func cleanup() {
@@ -774,7 +927,26 @@ public class Passage: NSObject {
     }
     
     private func topMostViewController() -> UIViewController? {
-        guard let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }),
+        let window: UIWindow?
+        
+        if #available(iOS 15.0, *) {
+            // Use UIWindowScene.windows for iOS 15+
+            window = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .first { $0.isKeyWindow }
+        } else if #available(iOS 13.0, *) {
+            // Use UIWindowScene.windows for iOS 13-14
+            window = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .first { $0.isKeyWindow }
+        } else {
+            // Fallback for iOS 12 and earlier
+            window = UIApplication.shared.windows.first { $0.isKeyWindow }
+        }
+        
+        guard let window = window,
               var topController = window.rootViewController else {
             return nil
         }
@@ -812,7 +984,8 @@ public class Passage: NSObject {
     }
     
     deinit {
-        // Ensure full cleanup when SDK is deallocated
+        // This should never happen for a singleton, but ensure cleanup if it does
+        passageLogger.error("[SDK:\(instanceId.prefix(8))] ❌ PassageSDK DEINIT CALLED! This should never happen for a singleton!")
         cleanup()
         passageLogger.debug("[SDK] PassageSDK deallocated")
     }
@@ -821,7 +994,9 @@ public class Passage: NSObject {
 // MARK: - WebViewModalDelegate
 extension Passage: WebViewModalDelegate {
     func webViewModalDidClose() {
-        passageLogger.debug("WebViewModalDelegate: webViewModalDidClose called")
+        passageLogger.info("[SDK:\(instanceId.prefix(8))] ========== WebViewModalDelegate: webViewModalDidClose ==========")
+        passageLogger.info("[SDK:\(instanceId.prefix(8))] Current state - isClosing: \(isClosing), onExit: \(onExit != nil ? "EXISTS" : "NIL")")
+        passageLogger.debug("[SDK:\(instanceId.prefix(8))] Delegate called on thread: \(Thread.isMainThread ? "Main" : "Background")")
         handleClose()
     }
     
@@ -953,6 +1128,17 @@ public class PassageCore {
     
     public var sdkVersion: String {
         return "0.0.1"
+    }
+    
+    /// Clear all webview data including cookies, localStorage, sessionStorage
+    /// Note: This method is only available on iOS. On other platforms, it's a no-op.
+    public func clearWebViewData() {
+        #if canImport(UIKit)
+        // Delegate to the iOS implementation
+        Passage.shared.clearWebViewData()
+        #else
+        passageLogger.info("[SDK] clearWebViewData() not available on this platform")
+        #endif
     }
     
     public func cleanup() {
