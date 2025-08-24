@@ -2,6 +2,8 @@
 
 A lightweight native Swift SDK for integrating Passage into iOS apps. This document focuses on the external, user‑facing API only.
 
+For complete integration guides and examples, visit our [documentation](https://docs.getpassage.ai/).
+
 ## Requirements
 
 - iOS 13+
@@ -55,7 +57,6 @@ Passage.shared.configure(
 Passage.shared.open(
     token: "your_intent_token",
     presentationStyle: .modal,   // .modal (default) or .fullScreen
-    from: viewController,        // Optional; provide when presenting from a specific VC
     onConnectionComplete: { data in
         print("Connection complete: \(data.connectionId)")
     },
@@ -64,9 +65,6 @@ Passage.shared.open(
     },
     onDataComplete: { result in
         print("Data: \(String(describing: result.data))")
-    },
-    onPromptComplete: { prompt in
-        print("Prompt: \(prompt.key) = \(prompt.value)")
     },
     onExit: { reason in
         print("Closed (reason: \(reason ?? "unknown"))")
@@ -79,11 +77,10 @@ let options = PassageOpenOptions(
     onConnectionComplete: { data in /* ... */ },
     onConnectionError: { error in /* ... */ },
     onDataComplete: { result in /* ... */ },
-    onPromptComplete: { prompt in /* ... */ },
     onExit: { reason in /* ... */ },
     presentationStyle: .modal
 )
-Passage.shared.open(options, from: viewController)
+Passage.shared.open(options)
 ```
 
 ### 3) Close programmatically (optional)
@@ -122,16 +119,14 @@ func configure(_ config: PassageConfig)
 func open(
     token: String,
     presentationStyle: PassagePresentationStyle = .modal,
-    from viewController: UIViewController? = nil,
     onConnectionComplete: ((PassageSuccessData) -> Void)? = nil,
     onConnectionError: ((PassageErrorData) -> Void)? = nil,
     onDataComplete: ((PassageDataResult) -> Void)? = nil,
-    onPromptComplete: ((PassagePromptResponse) -> Void)? = nil,
     onExit: ((String?) -> Void)? = nil
 )
 
 // Options-based overload
-func open(_ options: PassageOpenOptions = PassageOpenOptions(), from viewController: UIViewController? = nil)
+func open(_ options: PassageOpenOptions = PassageOpenOptions())
 
 // Close connection UI
 func close()
@@ -162,13 +157,6 @@ public struct PassageErrorData {
 
 public struct PassageDataResult {
     public let data: Any?
-    public let prompts: [[String: Any]]?
-}
-
-public struct PassagePromptResponse {
-    public let key: String
-    public let value: String
-    public let response: Any?
 }
 
 public struct PassageOpenOptions { /* contains: intentToken, callbacks, presentationStyle */ }
