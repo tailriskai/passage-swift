@@ -1268,10 +1268,20 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     // Clear all webview data including cookies, localStorage, sessionStorage (manual method)
     func clearWebViewData() {
+        clearWebViewData(completion: nil)
+    }
+    
+    // Clear all webview data including cookies, localStorage, sessionStorage with completion handler
+    func clearWebViewData(completion: (() -> Void)?) {
         passageLogger.info("[WEBVIEW] Clearing ALL webview data including cookies, localStorage, sessionStorage")
         
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else { 
+                completion?()
+                return 
+            }
+            
+            let group = DispatchGroup()
             
             // Clear all website data for both webviews
             if let uiWebView = self.uiWebView {
@@ -1286,10 +1296,12 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 uiWebView.loadHTMLString("", baseURL: nil)
                 
                 // Clear ALL website data for this webview
+                group.enter()
                 let dataStore = uiWebView.configuration.websiteDataStore
                 let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
                 dataStore.removeData(ofTypes: dataTypes, modifiedSince: Date(timeIntervalSince1970: 0)) {
                     passageLogger.debug("[WEBVIEW] ALL UI webview data cleared (cookies, localStorage, sessionStorage)")
+                    group.leave()
                 }
             }
             
@@ -1305,20 +1317,26 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 automationWebView.loadHTMLString("", baseURL: nil)
                 
                 // Clear ALL website data for this webview
+                group.enter()
                 let dataStore = automationWebView.configuration.websiteDataStore
                 let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
                 dataStore.removeData(ofTypes: dataTypes, modifiedSince: Date(timeIntervalSince1970: 0)) {
                     passageLogger.debug("[WEBVIEW] ALL automation webview data cleared (cookies, localStorage, sessionStorage)")
+                    group.leave()
                 }
             }
             
-            // Reset webview state variables
-            self.resetForNewSession()
-            
-            // Additionally reset the main URL property to empty for next session
-            self.url = ""
-            
-            passageLogger.info("[WEBVIEW] ALL webview data cleared successfully")
+            // Wait for all clearing operations to complete
+            group.notify(queue: .main) {
+                // Reset webview state variables
+                self.resetForNewSession()
+                
+                // Additionally reset the main URL property to empty for next session
+                self.url = ""
+                
+                passageLogger.info("[WEBVIEW] ALL webview data cleared successfully")
+                completion?()
+            }
         }
     }
     

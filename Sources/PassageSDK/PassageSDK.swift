@@ -567,6 +567,25 @@ public class Passage: NSObject {
         }
     }
     
+    /// Clear all cookies only (preserves localStorage, sessionStorage, and other data) with completion handler
+    /// Use clearWebViewData() if you want to clear everything including localStorage and sessionStorage
+    public func clearAllCookies(completion: @escaping () -> Void) {
+        passageLogger.info("[SDK] Clearing all cookies only (preserving localStorage, sessionStorage)")
+        
+        DispatchQueue.main.async {
+            WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+                passageLogger.debug("[SDK] Found \(cookies.count) cookies to clear")
+                
+                for cookie in cookies {
+                    WKWebsiteDataStore.default().httpCookieStore.delete(cookie)
+                }
+                
+                passageLogger.info("[SDK] All cookies cleared successfully")
+                completion()
+            }
+        }
+    }
+    
     public func clearWebViewState() {
         passageLogger.info("[SDK] Clearing webview navigation state (preserving cookies, localStorage, sessionStorage)")
         
@@ -592,6 +611,25 @@ public class Passage: NSObject {
             self.webViewController?.clearWebViewData()
             
             passageLogger.info("[SDK] ALL WebView data cleared successfully")
+        }
+    }
+    
+    /// Clear all webview data including cookies, localStorage, sessionStorage with completion handler
+    /// This is a manual method that should be called when you want to completely reset the webview state
+    public func clearWebViewData(completion: @escaping () -> Void) {
+        passageLogger.info("[SDK] Clearing ALL webview data including cookies, localStorage, sessionStorage")
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { 
+                completion()
+                return 
+            }
+            
+            // Clear all webview data including cookies, localStorage, sessionStorage
+            self.webViewController?.clearWebViewData { [weak self] in
+                self?.passageLogger.info("[SDK] ALL WebView data cleared successfully")
+                completion()
+            }
         }
     }
     
@@ -1148,6 +1186,18 @@ public class PassageCore {
         Passage.shared.clearWebViewData()
         #else
         passageLogger.info("[SDK] clearWebViewData() not available on this platform")
+        #endif
+    }
+    
+    /// Clear all webview data including cookies, localStorage, sessionStorage with completion handler
+    /// Note: This method is only available on iOS. On other platforms, it's a no-op.
+    public func clearWebViewData(completion: @escaping () -> Void) {
+        #if canImport(UIKit)
+        // Delegate to the iOS implementation
+        Passage.shared.clearWebViewData(completion: completion)
+        #else
+        passageLogger.info("[SDK] clearWebViewData() not available on this platform")
+        completion()
         #endif
     }
     
