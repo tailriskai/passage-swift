@@ -171,6 +171,7 @@ public class Passage: NSObject {
     
     // State management
     private var isClosing: Bool = false
+    private var isPresentingModal: Bool = false
     private var modalPresentationTimer: Timer?
     
     // Callbacks - matching React Native SDK structure
@@ -329,6 +330,12 @@ public class Passage: NSObject {
                 return
             }
             
+            // Prevent concurrent presentations which can cause UIKit crashes
+            if self.isPresentingModal {
+                passageLogger.warn("[SDK] open() called while a presentation is in progress. Ignoring this call to prevent double-present.")
+                return
+            }
+
             // Get presenting view controller
             let presentingVC = viewController ?? self.topMostViewController()
             
@@ -414,19 +421,19 @@ public class Passage: NSObject {
             
             // Load the new URL
             webVC.loadURL(url)
-            
-            // Check if navigation controller is already presented
+
+            // If already presented, do not attempt to present again. Just update URL and (re)initialize session.
             if let navController = self.navigationController,
                navController.presentingViewController != nil {
-                passageLogger.warn("[SDK] ⚠️ Navigation controller is already presented! Dismissing first...")
-                navController.dismiss(animated: false) { [weak self] in
-                    // Present again after dismissal
-                    self?.presentNavigationController(navController, from: presentingVC, token: token, url: url)
-                }
-            } else {
-                // Present the modal
-                self.presentNavigationController(self.navigationController!, from: presentingVC, token: token, url: url)
+                passageLogger.warn("[SDK] Navigation controller is already presented. Updating URL and initializing remote control without re-presenting.")
+                self.initializeRemoteControl(with: token)
+                passageAnalytics.trackOpenSuccess(url: url)
+                return
             }
+
+            // Present the modal (single-flight)
+            self.isPresentingModal = true
+            self.presentNavigationController(self.navigationController!, from: presentingVC, token: token, url: url)
         }
     }
     
@@ -447,6 +454,9 @@ public class Passage: NSObject {
             // Initialize remote control if needed
             self.initializeRemoteControl(with: token)
             passageAnalytics.trackOpenSuccess(url: url)
+
+            // Mark presentation as finished
+            self.isPresentingModal = false
         }
     }
     
