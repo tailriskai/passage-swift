@@ -626,8 +626,8 @@ public class Passage: NSObject {
             }
             
             // Clear all webview data including cookies, localStorage, sessionStorage
-            self.webViewController?.clearWebViewData { [weak self] in
-                self?.passageLogger.info("[SDK] ALL WebView data cleared successfully")
+            self.webViewController?.clearWebViewData {
+                passageLogger.info("[SDK] ALL WebView data cleared successfully")
                 completion()
             }
         }
