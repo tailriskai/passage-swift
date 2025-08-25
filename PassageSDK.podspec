@@ -1,6 +1,6 @@
 Pod::Spec.new do |spec|
   spec.name         = "PassageSDK"
-  spec.version      = "0.0.15"
+  spec.version      = "0.0.16"
   spec.summary      = "Passage SDK for iOS"
   spec.description  = <<-DESC
     The everywhere API
