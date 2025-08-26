@@ -631,6 +631,16 @@ class RemoteControlManager {
                 passageLogger.info("[SOCKET EVENT] Data stored successfully:")
                 passageLogger.info("[SOCKET EVENT]   - Stored \(actualData.count) data items")
                 passageLogger.info("[SOCKET EVENT]   - Connection ID: \(connectionData["id"] as? String ?? "nil")")
+                
+                // Trigger onDataComplete callback immediately when data is available
+                if status == "data_available" {
+                    passageLogger.info("[SOCKET EVENT] Triggering onDataComplete callback with available data")
+                    let dataResult = PassageDataResult(
+                        data: actualData, // Pass all data items
+                        prompts: connectionData["promptResults"] as? [[String: Any]]
+                    )
+                    self?.onDataComplete?(dataResult)
+                }
             } else {
                 passageLogger.warn("[SOCKET EVENT] ❌ Data storage conditions not met - data will not be available for success callback")
             }
