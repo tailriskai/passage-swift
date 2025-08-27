@@ -1371,7 +1371,7 @@ class RemoteControlManager {
                 // Send done result with success status
                 let result = CommandResult(
                     id: currentCommand.id,
-                    status: "done",
+                    status: "success",
                     data: AnyCodable(data),
                     pageData: pageData,
                     error: nil
