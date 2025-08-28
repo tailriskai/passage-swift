@@ -268,6 +268,14 @@ class RemoteControlManager {
         self.onConfigurationUpdated = callback
     }
     
+    // MARK: - Global JavaScript Access
+    
+    /// Get the global JavaScript that should be injected into automation webview on every navigation
+    /// Returns empty string if no global JavaScript is configured
+    func getGlobalJavascript() -> String {
+        return globalJavascript
+    }
+    
     func connect(
         intentToken: String,
         onSuccess: ((PassageSuccessData) -> Void)? = nil,

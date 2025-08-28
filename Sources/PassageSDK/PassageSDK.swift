@@ -706,7 +706,7 @@ public class Passage: NSObject {
         passageLogger.updateIntentToken(token)
         passageAnalytics.updateSessionInfo(intentToken: token, sessionId: nil)
         
-        // Set configuration callback to handle user agent and integration URL (matches React Native)
+        // Set configuration callback to handle user agent, integration URL, and global JavaScript (matches React Native)
         remoteControl.setConfigurationCallback { [weak self] userAgent, integrationUrl in
             passageLogger.debug("[SDK] Configuration updated - userAgent: \(userAgent.isEmpty ? "empty" : "provided (\(userAgent.count) chars)"), integrationUrl: \(integrationUrl ?? "none")")
             
@@ -723,6 +723,10 @@ public class Passage: NSObject {
                 if let integrationUrl = integrationUrl {
                     self?.webViewController?.setAutomationUrl(integrationUrl)
                 }
+                
+                // Update global JavaScript configuration
+                // This will recreate the automation webview if global JavaScript is available
+                self?.webViewController?.updateGlobalJavaScript()
             }
         }
         

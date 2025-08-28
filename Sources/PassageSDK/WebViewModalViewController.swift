@@ -406,6 +406,22 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             )
             userContentController.addUserScript(userScript)
             
+            // For automation webview, also inject global JavaScript on every navigation
+            if webViewType == PassageConstants.WebViewTypes.automation {
+                let globalScript = generateGlobalJavaScript()
+                if !globalScript.isEmpty {
+                    let globalUserScript = WKUserScript(
+                        source: globalScript,
+                        injectionTime: .atDocumentStart,
+                        forMainFrameOnly: false
+                    )
+                    userContentController.addUserScript(globalUserScript)
+                    passageLogger.debug("[WEBVIEW] Added global JavaScript to automation webview (\(globalScript.count) chars)")
+                } else {
+                    passageLogger.debug("[WEBVIEW] No global JavaScript to inject in automation webview")
+                }
+            }
+            
             // Add console logging script
             let consoleScript = """
             (function() {
@@ -616,6 +632,31 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         uiWebView.alpha = 1
         automationWebView.alpha = 0
         view.bringSubviewToFront(uiWebView)
+    }
+    
+    private func generateGlobalJavaScript() -> String {
+        // Get global JavaScript from remote control manager
+        guard let remoteControl = remoteControl else {
+            return "" // Return empty string if no remote control
+        }
+        
+        let globalScript = remoteControl.getGlobalJavascript()
+        if globalScript.isEmpty {
+            return "" // Return empty string if no global JS
+        }
+        
+        // Wrap the global script in an IIFE for safety (matches React Native implementation)
+        return """
+        (function() {
+            try {
+                \(globalScript)
+                return true;
+            } catch (error) {
+                console.error('[Passage] Error executing global JavaScript:', error);
+            }
+        })();
+        true;
+        """
     }
     
     private func createPassageScript(for webViewType: String) -> String {
@@ -1451,6 +1492,66 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 self.automationWebView?.load(request)
             }
         }
+    }
+    
+    /// Update global JavaScript configuration and recreate automation webview if needed
+    /// This should be called when configuration changes include new globalJavascript
+    func updateGlobalJavaScript() {
+        passageLogger.debug("[WEBVIEW] Updating global JavaScript configuration")
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Check if we have an automation webview and if global JS has changed
+            let newGlobalScript = self.generateGlobalJavaScript()
+            
+            if !newGlobalScript.isEmpty {
+                passageLogger.info("[WEBVIEW] Global JavaScript updated (\(newGlobalScript.count) chars), recreating automation webview")
+                
+                // Store current URL if automation webview exists
+                var currentUrl: String?
+                if let automationWebView = self.automationWebView {
+                    currentUrl = automationWebView.url?.absoluteString
+                }
+                
+                // Recreate automation webview with new global JavaScript
+                self.recreateAutomationWebView()
+                
+                // Reload the current URL if we had one
+                if let url = currentUrl, !url.isEmpty {
+                    self.setAutomationUrl(url)
+                }
+            } else {
+                passageLogger.debug("[WEBVIEW] No global JavaScript to update")
+            }
+        }
+    }
+    
+    private func recreateAutomationWebView() {
+        passageLogger.debug("[WEBVIEW] Recreating automation webview with updated configuration")
+        
+        // Remove old automation webview
+        if let oldAutomationWebView = automationWebView {
+            oldAutomationWebView.removeFromSuperview()
+        }
+        
+        // Create new automation webview
+        automationWebView = createWebView(webViewType: PassageConstants.WebViewTypes.automation)
+        
+        // Add to view hierarchy
+        view.addSubview(automationWebView)
+        automationWebView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            automationWebView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            automationWebView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            automationWebView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            automationWebView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        
+        // Set initial visibility (automation webview starts hidden)
+        automationWebView.alpha = 0
+        
+        passageLogger.info("[WEBVIEW] Automation webview recreated successfully")
     }
     
     // Handle navigation state changes (like React Native implementation)
