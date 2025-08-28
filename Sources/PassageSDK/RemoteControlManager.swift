@@ -357,10 +357,12 @@ class RemoteControlManager {
                         passageLogger.info("[REMOTE CONTROL] Cookie domains configured: \(self?.cookieDomains.count ?? 0) domains")
                         
                         // Notify about configuration update (matches React Native implementation)
-                        if let callback = self?.onConfigurationUpdated {
-                            callback(self?.automationUserAgent ?? "", self?.integrationUrl)
+                        if let self = self, let callback = self.onConfigurationUpdated {
+                            callback(self.automationUserAgent, self.integrationUrl)
                         }
-                        passageAnalytics.trackConfigurationSuccess(userAgent: self?.automationUserAgent, integrationUrl: self?.integrationUrl)
+                        if let self = self {
+                            passageAnalytics.trackConfigurationSuccess(userAgent: self.automationUserAgent, integrationUrl: self.integrationUrl)
+                        }
                     }
                 } catch {
                     passageLogger.error("[REMOTE CONTROL] JSON parsing error: \(error)")
