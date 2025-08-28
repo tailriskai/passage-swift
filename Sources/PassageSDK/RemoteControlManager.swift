@@ -339,13 +339,15 @@ class RemoteControlManager {
                     if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                         self?.cookieDomains = json["cookieDomains"] as? [String] ?? []
                         self?.globalJavascript = json["globalJavascript"] as? String ?? ""
+                        // Extract automationUserAgent - undefined/null becomes empty string
                         self?.automationUserAgent = json["automationUserAgent"] as? String ?? ""
                         self?.integrationUrl = (json["integration"] as? [String: Any])?["url"] as? String
                         
                         passageLogger.info("[REMOTE CONTROL] Configuration parsed successfully")
                         passageLogger.debug("[REMOTE CONTROL] Cookie domains: \(self?.cookieDomains ?? [])")
                         passageLogger.debug("[REMOTE CONTROL] Global JS length: \(self?.globalJavascript.count ?? 0)")
-                        passageLogger.debug("[REMOTE CONTROL] Automation user agent: \(self?.automationUserAgent ?? "none")")
+                        let userAgentInfo = self?.automationUserAgent?.isEmpty == false ? "provided (\(self?.automationUserAgent?.count ?? 0) chars)" : "empty (will use webview default)"
+                        passageLogger.debug("[REMOTE CONTROL] Automation user agent: \(userAgentInfo)")
                         passageLogger.debug("[REMOTE CONTROL] Integration URL: \(self?.integrationUrl ?? "none")")
                         passageLogger.info("[REMOTE CONTROL] Cookie domains configured: \(self?.cookieDomains.count ?? 0) domains")
                         
@@ -870,7 +872,7 @@ class RemoteControlManager {
         var queryItems = [
             URLQueryItem(name: "intentToken", value: intentToken ?? ""),
             URLQueryItem(name: "success", value: success.description),
-            URLQueryItem(name: "agentName", value: config.agentName)
+            URLQueryItem(name: "appAgentName", value: config.agentName)
         ]
         
         if let error = error {

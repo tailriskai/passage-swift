@@ -708,12 +708,15 @@ public class Passage: NSObject {
         
         // Set configuration callback to handle user agent and integration URL (matches React Native)
         remoteControl.setConfigurationCallback { [weak self] userAgent, integrationUrl in
-            passageLogger.debug("[SDK] Configuration updated - userAgent: \(userAgent.isEmpty ? "none" : "provided"), integrationUrl: \(integrationUrl ?? "none")")
+            passageLogger.debug("[SDK] Configuration updated - userAgent: \(userAgent.isEmpty ? "empty" : "provided (\(userAgent.count) chars)"), integrationUrl: \(integrationUrl ?? "none")")
             
             DispatchQueue.main.async {
                 // Update automation webview user agent if provided
                 if !userAgent.isEmpty {
+                    passageLogger.info("[SDK] Setting custom automation user agent (\(userAgent.count) chars)")
                     self?.webViewController?.setAutomationUserAgent(userAgent)
+                } else {
+                    passageLogger.info("[SDK] Using default automation webview user agent (no custom user agent provided)")
                 }
                 
                 // Update automation webview URL if provided
