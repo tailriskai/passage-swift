@@ -346,7 +346,7 @@ class RemoteControlManager {
                         passageLogger.info("[REMOTE CONTROL] Configuration parsed successfully")
                         passageLogger.debug("[REMOTE CONTROL] Cookie domains: \(self?.cookieDomains ?? [])")
                         passageLogger.debug("[REMOTE CONTROL] Global JS length: \(self?.globalJavascript.count ?? 0)")
-                        let userAgentInfo = self?.automationUserAgent?.isEmpty == false ? "provided (\(self?.automationUserAgent?.count ?? 0) chars)" : "empty (will use webview default)"
+                        let userAgentInfo = (self?.automationUserAgent?.isEmpty == false) ? "provided (\(self?.automationUserAgent?.count ?? 0) chars)" : "empty (will use webview default)"
                         passageLogger.debug("[REMOTE CONTROL] Automation user agent: \(userAgentInfo)")
                         passageLogger.debug("[REMOTE CONTROL] Integration URL: \(self?.integrationUrl ?? "none")")
                         passageLogger.info("[REMOTE CONTROL] Cookie domains configured: \(self?.cookieDomains.count ?? 0) domains")
