@@ -347,8 +347,9 @@ class RemoteControlManager {
                         passageLogger.debug("[REMOTE CONTROL] Cookie domains: \(self?.cookieDomains ?? [])")
                         passageLogger.debug("[REMOTE CONTROL] Global JS length: \(self?.globalJavascript.count ?? 0)")
                         let userAgentInfo: String
-                        if let automationUserAgent = self?.automationUserAgent, !automationUserAgent.isEmpty {
-                            userAgentInfo = "provided (\(automationUserAgent.count) chars)"
+                        if let self = self, !self.automationUserAgent.isEmpty {
+                            let agent = self.automationUserAgent
+                            userAgentInfo = "provided (\(agent.count) chars)"
                         } else {
                             userAgentInfo = "empty (will use webview default)"
                         }
