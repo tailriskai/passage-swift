@@ -727,11 +727,11 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             function createSafeExecutionContext() {
                 // Patch WeakMap to handle invalid keys gracefully
                 const OriginalWeakMap = window.WeakMap;
-                const safeWeakMapInstances = new Set();
                 
                 function SafeWeakMap(iterable) {
                     const instance = new OriginalWeakMap(iterable);
-                    safeWeakMapInstances.add(instance);
+                    // Use a separate Map to track primitive key wrappers
+                    const primitiveKeyMap = new Map();
                     
                     const originalSet = instance.set.bind(instance);
                     const originalGet = instance.get.bind(instance);
@@ -740,49 +740,34 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                     
                     instance.set = function(key, value) {
                         if (key === null || key === undefined || (typeof key !== 'object' && typeof key !== 'function' && typeof key !== 'symbol')) {
-                            console.warn('[Passage] WeakMap: Invalid key type, converting to string-based key:', typeof key, key);
-                            // Convert primitive to a wrapper object
-                            const keyWrapper = { __primitive_key: key, __passage_wrapper: true };
-                            return originalSet(keyWrapper, value);
+                            console.warn('[Passage] WeakMap: Invalid key type, using fallback storage:', typeof key, key);
+                            // Store primitive keys in a separate Map
+                            primitiveKeyMap.set(key, value);
+                            return instance;
                         }
                         return originalSet(key, value);
                     };
                     
                     instance.get = function(key) {
                         if (key === null || key === undefined || (typeof key !== 'object' && typeof key !== 'function' && typeof key !== 'symbol')) {
-                            // Try to find wrapper object
-                            for (const [wrapperKey, value] of instance) {
-                                if (wrapperKey && wrapperKey.__passage_wrapper && wrapperKey.__primitive_key === key) {
-                                    return value;
-                                }
-                            }
-                            return undefined;
+                            // Get from primitive key map
+                            return primitiveKeyMap.get(key);
                         }
                         return originalGet(key);
                     };
                     
                     instance.has = function(key) {
                         if (key === null || key === undefined || (typeof key !== 'object' && typeof key !== 'function' && typeof key !== 'symbol')) {
-                            // Check for wrapper object
-                            for (const [wrapperKey] of instance) {
-                                if (wrapperKey && wrapperKey.__passage_wrapper && wrapperKey.__primitive_key === key) {
-                                    return true;
-                                }
-                            }
-                            return false;
+                            // Check primitive key map
+                            return primitiveKeyMap.has(key);
                         }
                         return originalHas(key);
                     };
                     
                     instance.delete = function(key) {
                         if (key === null || key === undefined || (typeof key !== 'object' && typeof key !== 'function' && typeof key !== 'symbol')) {
-                            // Find and delete wrapper object
-                            for (const [wrapperKey] of instance) {
-                                if (wrapperKey && wrapperKey.__passage_wrapper && wrapperKey.__primitive_key === key) {
-                                    return originalDelete(wrapperKey);
-                                }
-                            }
-                            return false;
+                            // Delete from primitive key map
+                            return primitiveKeyMap.delete(key);
                         }
                         return originalDelete(key);
                     };
