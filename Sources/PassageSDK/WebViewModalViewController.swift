@@ -408,21 +408,59 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             
             // For automation webview, also inject global JavaScript on every navigation
             if webViewType == PassageConstants.WebViewTypes.automation {
+                passageLogger.info("[WEBVIEW] Setting up global JavaScript injection for automation webview")
                 let globalScript = generateGlobalJavaScript()
+                
                 if !globalScript.isEmpty {
+                    passageLogger.info("[WEBVIEW] 🚀 Injecting global JavaScript into automation webview")
+                    
+                    // Wrap the global script to wait for window.passage initialization
+                    let delayedGlobalScript = """
+                    console.log('[Passage] Global JavaScript injection script starting...');
+                    
+                    (function() {
+                        let attemptCount = 0;
+                        const maxAttempts = 100; // 5 seconds max wait
+                        
+                        function waitForPassage() {
+                            attemptCount++;
+                            console.log('[Passage] Checking for window.passage... attempt ' + attemptCount);
+                            
+                            if (window.passage && window.passage.initialized) {
+                                console.log('[Passage] ✅ window.passage ready, executing global script');
+                                try {
+                                    \(globalScript)
+                                    console.log('[Passage] ✅ Global script execution completed');
+                                } catch (error) {
+                                    console.error('[Passage] ❌ Error in global script execution:', error);
+                                }
+                            } else if (attemptCount < maxAttempts) {
+                                console.log('[Passage] ⏳ Waiting for window.passage initialization... (' + attemptCount + '/' + maxAttempts + ')');
+                                setTimeout(waitForPassage, 50);
+                            } else {
+                                console.error('[Passage] ❌ Timeout waiting for window.passage after ' + (maxAttempts * 50) + 'ms');
+                            }
+                        }
+                        
+                        // Start checking after a small delay
+                        console.log('[Passage] Starting window.passage check in 100ms...');
+                        setTimeout(waitForPassage, 100);
+                    })();
+                    """
+                    
                     let globalUserScript = WKUserScript(
-                        source: globalScript,
-                        injectionTime: .atDocumentStart,
-                        forMainFrameOnly: false
+                        source: delayedGlobalScript,
+                        injectionTime: .atDocumentEnd,
+                        forMainFrameOnly: true
                     )
                     userContentController.addUserScript(globalUserScript)
-                    passageLogger.debug("[WEBVIEW] Added global JavaScript to automation webview (\(globalScript.count) chars)")
+                    passageLogger.info("[WEBVIEW] ✅ Added delayed global JavaScript to automation webview (\(globalScript.count) chars)")
                 } else {
-                    passageLogger.debug("[WEBVIEW] No global JavaScript to inject in automation webview")
+                    passageLogger.info("[WEBVIEW] ℹ️ No global JavaScript to inject in automation webview (empty script)")
                 }
             }
             
-            // Add console logging script
+            // Add console logging script with WeakMap error detection
             let consoleScript = """
             (function() {
                 // Capture console.error
@@ -438,8 +476,15 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                     }
                 };
                 
-                // Capture uncaught errors
+                // Capture uncaught errors with special handling for WeakMap errors
                 window.addEventListener('error', function(event) {
+                    const isWeakMapError = event.message && event.message.includes('WeakMap');
+                    
+                    if (isWeakMapError) {
+                        console.error('[Passage] WeakMap error detected:', event.message);
+                        console.error('[Passage] This may be caused by global JavaScript injection timing');
+                    }
+                    
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                         window.webkit.messageHandlers.passageWebView.postMessage({
                             type: 'javascript_error',
@@ -448,6 +493,19 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                             line: event.lineno,
                             column: event.colno,
                             stack: event.error ? event.error.stack : '',
+                            webViewType: '\(webViewType)',
+                            isWeakMapError: isWeakMapError
+                        });
+                    }
+                });
+                
+                // Capture unhandled promise rejections
+                window.addEventListener('unhandledrejection', function(event) {
+                    console.error('[Passage] Unhandled promise rejection:', event.reason);
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                        window.webkit.messageHandlers.passageWebView.postMessage({
+                            type: 'unhandled_rejection',
+                            message: String(event.reason),
                             webViewType: '\(webViewType)'
                         });
                     }
@@ -637,25 +695,152 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     private func generateGlobalJavaScript() -> String {
         // Get global JavaScript from remote control manager
         guard let remoteControl = remoteControl else {
+            passageLogger.debug("[WEBVIEW] No remote control available for global JavaScript")
             return "" // Return empty string if no remote control
         }
         
         let globalScript = remoteControl.getGlobalJavascript()
+        passageLogger.info("[WEBVIEW] Global JavaScript retrieved: \(globalScript.isEmpty ? "EMPTY" : "\(globalScript.count) chars")")
+        
+        if !globalScript.isEmpty {
+            // Log first 200 chars of global script for debugging
+            let preview = String(globalScript.prefix(200))
+            passageLogger.debug("[WEBVIEW] Global JavaScript preview: \(preview)...")
+        }
+        
         if globalScript.isEmpty {
             return "" // Return empty string if no global JS
         }
         
-        // Wrap the global script in an IIFE for safety (matches React Native implementation)
+        // Wrap the global script with comprehensive error handling and context isolation
         return """
         (function() {
-            try {
-                \(globalScript)
-                return true;
-            } catch (error) {
-                console.error('[Passage] Error executing global JavaScript:', error);
+            'use strict';
+            
+            // Ensure we have a clean context
+            if (typeof window === 'undefined') {
+                console.warn('[Passage] Global JavaScript executed outside window context');
+                return false;
+            }
+            
+            // Create a safe execution environment for third-party libraries
+            function createSafeExecutionContext() {
+                // Patch WeakMap to handle invalid keys gracefully
+                const OriginalWeakMap = window.WeakMap;
+                const safeWeakMapInstances = new Set();
+                
+                function SafeWeakMap(iterable) {
+                    const instance = new OriginalWeakMap(iterable);
+                    safeWeakMapInstances.add(instance);
+                    
+                    const originalSet = instance.set.bind(instance);
+                    const originalGet = instance.get.bind(instance);
+                    const originalHas = instance.has.bind(instance);
+                    const originalDelete = instance.delete.bind(instance);
+                    
+                    instance.set = function(key, value) {
+                        if (key === null || key === undefined || (typeof key !== 'object' && typeof key !== 'function' && typeof key !== 'symbol')) {
+                            console.warn('[Passage] WeakMap: Invalid key type, converting to string-based key:', typeof key, key);
+                            // Convert primitive to a wrapper object
+                            const keyWrapper = { __primitive_key: key, __passage_wrapper: true };
+                            return originalSet(keyWrapper, value);
+                        }
+                        return originalSet(key, value);
+                    };
+                    
+                    instance.get = function(key) {
+                        if (key === null || key === undefined || (typeof key !== 'object' && typeof key !== 'function' && typeof key !== 'symbol')) {
+                            // Try to find wrapper object
+                            for (const [wrapperKey, value] of instance) {
+                                if (wrapperKey && wrapperKey.__passage_wrapper && wrapperKey.__primitive_key === key) {
+                                    return value;
+                                }
+                            }
+                            return undefined;
+                        }
+                        return originalGet(key);
+                    };
+                    
+                    instance.has = function(key) {
+                        if (key === null || key === undefined || (typeof key !== 'object' && typeof key !== 'function' && typeof key !== 'symbol')) {
+                            // Check for wrapper object
+                            for (const [wrapperKey] of instance) {
+                                if (wrapperKey && wrapperKey.__passage_wrapper && wrapperKey.__primitive_key === key) {
+                                    return true;
+                                }
+                            }
+                            return false;
+                        }
+                        return originalHas(key);
+                    };
+                    
+                    instance.delete = function(key) {
+                        if (key === null || key === undefined || (typeof key !== 'object' && typeof key !== 'function' && typeof key !== 'symbol')) {
+                            // Find and delete wrapper object
+                            for (const [wrapperKey] of instance) {
+                                if (wrapperKey && wrapperKey.__passage_wrapper && wrapperKey.__primitive_key === key) {
+                                    return originalDelete(wrapperKey);
+                                }
+                            }
+                            return false;
+                        }
+                        return originalDelete(key);
+                    };
+                    
+                    return instance;
+                }
+                
+                // Copy static methods
+                Object.setPrototypeOf(SafeWeakMap, OriginalWeakMap);
+                SafeWeakMap.prototype = OriginalWeakMap.prototype;
+                
+                return SafeWeakMap;
+            }
+            
+            // Wait for DOM to be ready if needed
+            function executeGlobalScript() {
+                try {
+                    // Create safe execution context
+                    const SafeWeakMap = createSafeExecutionContext();
+                    const originalWeakMap = window.WeakMap;
+                    
+                    // Temporarily replace WeakMap
+                    window.WeakMap = SafeWeakMap;
+                    
+                    console.log('[Passage] Executing global script with WeakMap protection');
+                    
+                    // Execute the global script in isolated scope
+                    (function() {
+                        \(globalScript)
+                    }).call(window);
+                    
+                    // Restore original WeakMap after a delay to allow library initialization
+                    setTimeout(function() {
+                        window.WeakMap = originalWeakMap;
+                        console.log('[Passage] WeakMap protection removed, original WeakMap restored');
+                    }, 1000);
+                    
+                    return true;
+                } catch (error) {
+                    console.error('[Passage] Error executing global JavaScript:', error);
+                    console.error('[Passage] Error stack:', error.stack);
+                    
+                    // Restore original WeakMap on error
+                    if (typeof originalWeakMap !== 'undefined') {
+                        window.WeakMap = originalWeakMap;
+                    }
+                    return false;
+                }
+            }
+            
+            // Execute immediately if DOM is ready, otherwise wait
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', executeGlobalScript);
+            } else {
+                // Add a small delay to ensure window.passage is fully initialized
+                setTimeout(executeGlobalScript, 100);
             }
         })();
-        true;
         """
     }
     
@@ -1497,21 +1682,28 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     /// Update global JavaScript configuration and recreate automation webview if needed
     /// This should be called when configuration changes include new globalJavascript
     func updateGlobalJavaScript() {
-        passageLogger.debug("[WEBVIEW] Updating global JavaScript configuration")
+        passageLogger.info("[WEBVIEW] 🔄 updateGlobalJavaScript() called")
         
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else { 
+                passageLogger.error("[WEBVIEW] Self is nil in updateGlobalJavaScript")
+                return 
+            }
             
             // Check if we have an automation webview and if global JS has changed
             let newGlobalScript = self.generateGlobalJavaScript()
             
+            passageLogger.info("[WEBVIEW] Current automation webview exists: \(self.automationWebView != nil)")
+            passageLogger.info("[WEBVIEW] New global script length: \(newGlobalScript.count) chars")
+            
             if !newGlobalScript.isEmpty {
-                passageLogger.info("[WEBVIEW] Global JavaScript updated (\(newGlobalScript.count) chars), recreating automation webview")
+                passageLogger.info("[WEBVIEW] 🚀 Global JavaScript updated (\(newGlobalScript.count) chars), recreating automation webview")
                 
                 // Store current URL if automation webview exists
                 var currentUrl: String?
                 if let automationWebView = self.automationWebView {
                     currentUrl = automationWebView.url?.absoluteString
+                    passageLogger.debug("[WEBVIEW] Current automation webview URL: \(currentUrl ?? "nil")")
                 }
                 
                 // Recreate automation webview with new global JavaScript
@@ -1519,10 +1711,11 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 
                 // Reload the current URL if we had one
                 if let url = currentUrl, !url.isEmpty {
+                    passageLogger.info("[WEBVIEW] Reloading automation webview with URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
                     self.setAutomationUrl(url)
                 }
             } else {
-                passageLogger.debug("[WEBVIEW] No global JavaScript to update")
+                passageLogger.info("[WEBVIEW] ℹ️ No global JavaScript to update (empty script)")
             }
         }
     }
@@ -1944,7 +2137,16 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                         passageLogger.error("JavaScript Console Error: \(errorMessage)")
                     }
                 case "javascript_error":
-                    passageLogger.error("JavaScript Error: \(body["message"] ?? "Unknown error")")
+                    let errorMessage = body["message"] ?? "Unknown error"
+                    let isWeakMapError = body["isWeakMapError"] as? Bool ?? false
+                    
+                    if isWeakMapError {
+                        passageLogger.error("🚨 WeakMap JavaScript Error: \(errorMessage)")
+                        passageLogger.error("  This is likely caused by global JavaScript injection timing issues")
+                    } else {
+                        passageLogger.error("JavaScript Error: \(errorMessage)")
+                    }
+                    
                     if let source = body["source"] as? String {
                         passageLogger.error("  Source: \(source)")
                     }
@@ -1954,6 +2156,8 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                     if let stack = body["stack"] as? String {
                         passageLogger.error("  Stack: \(stack)")
                     }
+                case "unhandled_rejection":
+                    passageLogger.error("Unhandled Promise Rejection: \(body["message"] ?? "Unknown rejection")")
                 case PassageConstants.MessageTypes.message:
                     // Handle window.passage.postMessage calls (matches Capacitor implementation)
                     if let data = body["data"] {

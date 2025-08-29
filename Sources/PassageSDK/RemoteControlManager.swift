@@ -273,6 +273,11 @@ class RemoteControlManager {
     /// Get the global JavaScript that should be injected into automation webview on every navigation
     /// Returns empty string if no global JavaScript is configured
     func getGlobalJavascript() -> String {
+        passageLogger.debug("[REMOTE CONTROL] getGlobalJavascript called - returning \(globalJavascript.isEmpty ? "EMPTY" : "\(globalJavascript.count) chars")")
+        if !globalJavascript.isEmpty {
+            let preview = String(globalJavascript.prefix(100))
+            passageLogger.debug("[REMOTE CONTROL] Global JS preview: \(preview)...")
+        }
         return globalJavascript
     }
     
@@ -346,7 +351,36 @@ class RemoteControlManager {
                 do {
                     if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                         self?.cookieDomains = json["cookieDomains"] as? [String] ?? []
-                        self?.globalJavascript = json["globalJavascript"] as? String ?? ""
+                        let newGlobalJavascript = json["globalJavascript"] as? String ?? ""
+                        
+                        // Log global JavaScript configuration changes
+                        if let self = self {
+                            let oldLength = self.globalJavascript.count
+                            let newLength = newGlobalJavascript.count
+                            
+                            self.globalJavascript = newGlobalJavascript
+                            
+                            passageLogger.info("[REMOTE CONTROL] 📝 Global JavaScript updated: \(oldLength) chars -> \(newLength) chars")
+                            
+                            if !newGlobalJavascript.isEmpty {
+                                let preview = String(newGlobalJavascript.prefix(150))
+                                passageLogger.debug("[REMOTE CONTROL] Global JS preview: \(preview)...")
+                                
+                                // Check if it contains common libraries
+                                if newGlobalJavascript.contains("Sentry") {
+                                    passageLogger.info("[REMOTE CONTROL] 🔍 Detected Sentry in global JavaScript")
+                                }
+                                if newGlobalJavascript.contains("WeakMap") {
+                                    passageLogger.warn("[REMOTE CONTROL] ⚠️ WeakMap detected in global JavaScript - potential compatibility issue")
+                                }
+                                if newGlobalJavascript.contains("NetworkInterceptor") {
+                                    passageLogger.info("[REMOTE CONTROL] 🌐 Detected NetworkInterceptor in global JavaScript")
+                                }
+                            } else {
+                                passageLogger.info("[REMOTE CONTROL] ℹ️ Global JavaScript is empty")
+                            }
+                        }
+                        
                         // Extract automationUserAgent - undefined/null becomes empty string
                         self?.automationUserAgent = json["automationUserAgent"] as? String ?? ""
                         self?.integrationUrl = (json["integration"] as? [String: Any])?["url"] as? String
