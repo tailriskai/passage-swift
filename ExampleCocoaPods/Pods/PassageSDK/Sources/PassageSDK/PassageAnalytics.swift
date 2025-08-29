@@ -139,7 +139,7 @@ public struct PassageAnalyticsConfig {
     let enabled: Bool
     
     public static let `default` = PassageAnalyticsConfig(
-        endpoint: "https://api.getpassage.ai/analytics",
+        endpoint: "https://ui.getpassage.ai/api/analytics",
         batchSize: 10,
         flushInterval: 5.0,
         maxRetries: 3,
