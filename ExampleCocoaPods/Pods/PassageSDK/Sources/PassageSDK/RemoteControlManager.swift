@@ -377,6 +377,10 @@ class RemoteControlManager {
         passageLogger.info("[REMOTE CONTROL] Intent token available: \(intentToken != nil)")
         passageAnalytics.trackRemoteControlConnectStart(socketUrl: socketURL.absoluteString, namespace: config.socketNamespace)
         
+        // Determine if we should use secure connection based on URL scheme
+        let isSecure = socketURL.scheme?.lowercased() == "https"
+        passageLogger.info("[REMOTE CONTROL] Using secure connection: \(isSecure) (scheme: \(socketURL.scheme ?? "nil"))")
+        
         let socketConfig: SocketIOClientConfiguration = [
             .log(config.debug),  // Use unified debug flag from PassageConfig
             .compress,
@@ -389,7 +393,7 @@ class RemoteControlManager {
             .reconnectWait(2),
             .reconnectWaitMax(10),
             .randomizationFactor(0),
-            .secure(true),  // Ensure secure connection for https
+            .secure(isSecure),  // Use secure connection only for HTTPS URLs
             .selfSigned(false)
             // Remove version specification to let it auto-negotiate
         ]
