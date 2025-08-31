@@ -778,6 +778,25 @@ public class Passage: NSObject {
                     passageLogger.debug("[SDK] 🏁 Navigation finished in \(webViewType)")
                 }
                 
+            case "OPEN_EXTERNAL_URL":
+                // Handle opening external URLs
+                if let urlString = data["url"] as? String {
+                    passageLogger.info("[SDK] 🔗 Opening external URL: \(urlString)")
+                    if let url = URL(string: urlString) {
+                        DispatchQueue.main.async {
+                            if UIApplication.shared.canOpenURL(url) {
+                                UIApplication.shared.open(url, options: [:]) { success in
+                                    passageLogger.info("[SDK] External URL open result: \(success ? "success" : "failed")")
+                                }
+                            } else {
+                                passageLogger.error("[SDK] Cannot open URL: \(urlString)")
+                            }
+                        }
+                    } else {
+                        passageLogger.error("[SDK] Invalid URL format: \(urlString)")
+                    }
+                }
+                
             default:
                 // Forward other messages to remote control (matches React Native implementation)
                 remoteControl?.handleWebViewMessage(data)
