@@ -60,6 +60,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     private var navigationTimeoutTimer: Timer?
     private var navigationStartTime: Date?
     
+    // Track intended navigation URLs to handle navigation failures
+    private var intendedAutomationURL: String?
+    private var intendedUIURL: String?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -1163,9 +1167,14 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     // Navigate in automation webview (for remote control)
     func navigateInAutomationWebView(_ url: String) {
         DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
             if let urlObj = URL(string: url) {
+                passageLogger.info("[WEBVIEW] Navigating to: \(passageLogger.truncateUrl(url, maxLength: 100))")
+                
+                // Just load the URL directly - let the webview handle any errors
                 let request = URLRequest(url: urlObj)
-                self?.automationWebView?.load(request)
+                self.automationWebView?.load(request)
             }
         }
     }
@@ -1869,35 +1878,15 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             }
         }
         
-        // Show error to user
-        let alert = UIAlertController(
-            title: "Connection Timeout",
-            message: "The page is taking too long to load. Please check your internet connection and try again.",
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
-            self?.uiWebView.reload()
-        })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
-            self?.closeModal()
-        })
-        
-        present(alert, animated: true)
+        // Don't show alert on HTTP errors as per requirement
+        passageLogger.error("[WebView] Connection timeout - page took too long to load")
+        // Silently handle the error without showing alert
     }
     
     private func showNavigationError(_ message: String) {
-        let alert = UIAlertController(
-            title: "Navigation Error",
-            message: message,
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
-            self?.uiWebView.reload()
-        })
-        alert.addAction(UIAlertAction(title: "Close", style: .cancel) { [weak self] _ in
-            self?.closeModal()
-        })
-        present(alert, animated: true)
+        // Don't show alert on HTTP errors as per requirement
+        passageLogger.error("[WebView] Navigation error: \(message)")
+        // Silently handle the error without showing alert
     }
     
     private func checkNavigationStatus(for webView: WKWebView) {
@@ -1998,32 +1987,19 @@ extension WebViewModalViewController: WKNavigationDelegate {
         navigationTimeoutTimer = nil
         
         let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
-        passageLogger.error("Provisional navigation failed: \(error.localizedDescription)")
-        
-        // Get the attempted URL
-        if let url = webView.url {
-            passageLogger.error("Failed URL: \(url.absoluteString)")
-            passageAnalytics.trackNavigationError(url: url.absoluteString, webViewType: webViewType, error: error.localizedDescription)
-        }
-        
-        // Log more error details
         let nsError = error as NSError
-        passageLogger.error("Error domain: \(nsError.domain), code: \(nsError.code)")
-        passageLogger.error("Error userInfo: \(nsError.userInfo)")
         
-        // Check for common issues
-        if nsError.domain == NSURLErrorDomain {
-            switch nsError.code {
-            case NSURLErrorNotConnectedToInternet:
-                passageLogger.error("No internet connection")
-            case NSURLErrorCannotFindHost:
-                passageLogger.error("Cannot find host")
-            case NSURLErrorSecureConnectionFailed:
-                passageLogger.error("Secure connection failed - possible certificate issue")
-            default:
-                break
-            }
+        // Just log the error but don't interfere with navigation
+        passageLogger.warn("Navigation failed but continuing: \(error.localizedDescription)")
+        passageLogger.debug("Error domain: \(nsError.domain), code: \(nsError.code)")
+        
+        // Track error for analytics
+        if let url = webView.url?.absoluteString ?? nsError.userInfo["NSErrorFailingURLStringKey"] as? String {
+            passageAnalytics.trackNavigationError(url: url, webViewType: webViewType, error: error.localizedDescription)
         }
+        
+        // Let the webview show whatever it can (error page, cached content, etc.)
+        // Don't retry or stop navigation - just let it be
     }
     
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -2062,15 +2038,8 @@ extension WebViewModalViewController: WKNavigationDelegate {
             }
             
             if httpResponse.statusCode >= 400 {
-                passageLogger.error("HTTP Error Response: \(httpResponse.statusCode)")
-                // Don't allow navigation for error responses
-                decisionHandler(.cancel)
-                
-                // Show error to user
-                DispatchQueue.main.async { [weak self] in
-                    self?.showNavigationError("Server returned error: \(httpResponse.statusCode)")
-                }
-                return
+                passageLogger.warn("HTTP Error Response: \(httpResponse.statusCode) - allowing navigation to continue")
+                // Allow navigation even for error responses - let the webview show the error page
             }
         }
         

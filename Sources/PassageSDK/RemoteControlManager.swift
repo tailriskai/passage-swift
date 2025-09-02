@@ -123,6 +123,35 @@ class RemoteControlManager {
             name: .sendBrowserState,
             object: nil
         )
+        
+        // Observe app state changes for websocket events
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
     }
     
     @objc private func handleNavigationCompleted(_ notification: Notification) {
@@ -210,6 +239,44 @@ class RemoteControlManager {
         // TODO: Implement browser state sending like React Native implementation
         // For now, just log that we received the notification
         // This would typically collect page data and send it to the backend
+    }
+    
+    // MARK: - App State Handling
+    
+    @objc private func appDidBecomeActive() {
+        emitAppStateUpdate("active")
+    }
+    
+    @objc private func appWillResignActive() {
+        emitAppStateUpdate("inactive")
+    }
+    
+    @objc private func appDidEnterBackground() {
+        emitAppStateUpdate("background")
+    }
+    
+    @objc private func appWillEnterForeground() {
+        // When coming from background to foreground, we'll transition through inactive first
+        // The appDidBecomeActive will fire shortly after and set it to active
+        emitAppStateUpdate("inactive")
+    }
+    
+    private func emitAppStateUpdate(_ state: String) {
+        // Only emit if socket is connected
+        guard let socket = socket, socket.status == .connected else {
+            passageLogger.debug("[REMOTE CONTROL] App state changed to '\(state)' but socket not connected")
+            return
+        }
+        
+        passageLogger.info("[REMOTE CONTROL] Emitting appStateUpdate event - state: \(state)")
+        
+        let appStateData: [String: Any] = [
+            "state": state,
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "intentToken": intentToken ?? ""
+        ]
+        
+        socket.emit("appStateUpdate", appStateData)
     }
     
     deinit {

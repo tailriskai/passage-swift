@@ -401,12 +401,11 @@ public class Passage: NSObject {
                 // Enable pull-down dismissal
                 navController.isModalInPresentation = false
                 
-                if #available(iOS 15.0, *) {
-                    if let sheet = navController.sheetPresentationController {
-                        sheet.detents = [.large()]
-                        sheet.prefersGrabberVisible = true // Always show grabber for pull-down
-                        sheet.prefersScrollingExpandsWhenScrolledToEdge = false
-                    }
+                // Configure sheet presentation (iOS 16+ required)
+                if let sheet = navController.sheetPresentationController {
+                    sheet.detents = [.large()]
+                    sheet.prefersGrabberVisible = true // Always show grabber for pull-down
+                    sheet.prefersScrollingExpandsWhenScrolledToEdge = false
                 }
                 
                 // Set delegate to handle dismissal
@@ -1001,24 +1000,11 @@ public class Passage: NSObject {
     }
     
     private func topMostViewController() -> UIViewController? {
-        let window: UIWindow?
-        
-        if #available(iOS 15.0, *) {
-            // Use UIWindowScene.windows for iOS 15+
-            window = UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap { $0.windows }
-                .first { $0.isKeyWindow }
-        } else if #available(iOS 13.0, *) {
-            // Use UIWindowScene.windows for iOS 13-14
-            window = UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap { $0.windows }
-                .first { $0.isKeyWindow }
-        } else {
-            // Fallback for iOS 12 and earlier
-            window = UIApplication.shared.windows.first { $0.isKeyWindow }
-        }
+        // Since we now require iOS 16+, we can use the modern approach directly
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }
         
         guard let window = window,
               var topController = window.rootViewController else {
