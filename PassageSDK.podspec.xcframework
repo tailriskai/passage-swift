@@ -1,6 +1,6 @@
 Pod::Spec.new do |spec|
   spec.name         = "PassageSDK"
-  spec.version      = "1.0.0"
+  spec.version      = "0.0.22"
   spec.summary      = "Passage SDK for iOS"
   spec.description  = <<-DESC
     The everywhere API
@@ -11,8 +11,8 @@ Pod::Spec.new do |spec|
   spec.license      = { :type => "MIT", :text => "Copyright (c) 2025 Passage Inc. All rights reserved." }
   spec.author       = { "Passage" => "developers@tailrisk.ai" }
   
-  spec.platform     = :ios, "13.0"
-  spec.swift_version = "5.7"
+  spec.ios.deployment_target = "16.0"
+  spec.swift_version = "5.10"
   
   spec.source       = { 
     :http => "https://github.com/tailriskai/passage-swift/releases/download/v#{spec.version}/PassageSDK-#{spec.version}.xcframework.zip",
@@ -23,14 +23,22 @@ Pod::Spec.new do |spec|
   spec.static_framework = true
 
   spec.dependency "Socket.IO-Client-Swift", "~> 16.1.1"
-  
-  spec.ios.deployment_target = "13.0"
-  
-  # Build settings for XCFramework
-  spec.pod_target_xcconfig = { 
+
+  # Build settings
+  spec.pod_target_xcconfig = {
+    'SWIFT_VERSION' => '5.10',
+    'DEFINES_MODULE' => 'YES',
+    'CLANG_ENABLE_MODULES' => 'YES',
+    'SWIFT_EMIT_LOC_STRINGS' => 'NO',
+    'OTHER_SWIFT_FLAGS' => '-DCocoaPods',
+    'SWIFT_INSTALL_OBJC_HEADER' => 'YES',
+    'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) COCOAPODS=1',
     'ONLY_ACTIVE_ARCH' => 'NO'
   }
-  spec.user_target_xcconfig = { 
+  spec.user_target_xcconfig = {
     'ONLY_ACTIVE_ARCH' => 'NO'
   }
+
+  # Ensure module map is properly generated
+  spec.module_name = 'PassageSDK'
 end

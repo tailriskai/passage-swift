@@ -86,11 +86,18 @@ for arg in "$@"; do
     esac
 done
 
-# Get version from podspec
-SDK_VERSION=$(grep -E "spec\.version\s*=" PassageSDK.podspec | sed -E 's/.*"([^"]+)".*/\1/')
+# Check if XCFramework podspec exists
+if [ ! -f "PassageSDK.podspec.xcframework" ]; then
+    print_error "PassageSDK.podspec.xcframework not found"
+    print_info "Make sure you're in the correct directory and the podspec exists"
+    exit 1
+fi
+
+# Get version from XCFramework podspec
+SDK_VERSION=$(grep -E "spec\.version\s*=" PassageSDK.podspec.xcframework | sed -E 's/.*"([^"]+)".*/\1/')
 
 if [ -z "$SDK_VERSION" ]; then
-    print_error "Could not extract version from PassageSDK.podspec"
+    print_error "Could not extract version from PassageSDK.podspec.xcframework"
     exit 1
 fi
 
@@ -137,22 +144,73 @@ if [ "$RESUME" = false ]; then
     
     print_success "XCFramework structure verified"
 
+    # Additional XCFramework validation
+    print_step "Validating XCFramework contents..."
+
+    XCFRAMEWORK_DIR="./build/PassageSDK.xcframework"
+
+    # Check if XCFramework directory exists
+    if [ ! -d "$XCFRAMEWORK_DIR" ]; then
+        print_error "XCFramework directory not found: $XCFRAMEWORK_DIR"
+        exit 1
+    fi
+
+    # Check for required architectures
+    if [ ! -d "$XCFRAMEWORK_DIR/ios-arm64" ] && [ ! -d "$XCFRAMEWORK_DIR/ios-arm64_armv7" ]; then
+        print_error "Missing iOS device architecture directory in XCFramework"
+        exit 1
+    fi
+
+    if [ ! -d "$XCFRAMEWORK_DIR/ios-arm64_x86_64-simulator" ]; then
+        print_error "Missing iOS simulator architecture directory in XCFramework"
+        exit 1
+    fi
+
+    # Check for Info.plist
+    if [ ! -f "$XCFRAMEWORK_DIR/Info.plist" ]; then
+        print_error "Info.plist not found in XCFramework"
+        exit 1
+    fi
+
+    # Check for framework/library files
+    DEVICE_FRAMEWORK=$(find "$XCFRAMEWORK_DIR" -path "*/ios-arm64*" -name "*.framework" -o -name "*.a" | head -1)
+    SIMULATOR_FRAMEWORK=$(find "$XCFRAMEWORK_DIR" -path "*/ios-arm64_x86_64-simulator*" -name "*.framework" -o -name "*.a" | head -1)
+
+    if [ -z "$DEVICE_FRAMEWORK" ] || [ -z "$SIMULATOR_FRAMEWORK" ]; then
+        print_error "Framework/library files not found in XCFramework"
+        exit 1
+    fi
+
+    print_success "XCFramework validation passed"
+
     # Calculate actual SHA256
     print_step "Calculating SHA256 checksum..."
+
+    # Check if the XCFramework zip exists
+    if [ ! -f "./build/PassageSDK-${SDK_VERSION}.xcframework.zip" ]; then
+        print_error "XCFramework zip not found: ./build/PassageSDK-${SDK_VERSION}.xcframework.zip"
+        print_info "Make sure the build process completed successfully"
+        exit 1
+    fi
+
     ACTUAL_SHA256=$(shasum -a 256 "./build/PassageSDK-${SDK_VERSION}.xcframework.zip" | cut -d' ' -f1)
+    if [ -z "$ACTUAL_SHA256" ]; then
+        print_error "Failed to calculate SHA256 checksum"
+        exit 1
+    fi
     print_info "SHA256: $ACTUAL_SHA256"
 
     # Update podspec with actual SHA256
     print_step "Updating podspec with SHA256..."
     # Use a more robust approach to update the SHA256 in the podspec
-    sed -i.bak "s/:sha256 => \"[^\"]*\"/:sha256 => \"$ACTUAL_SHA256\"/g" PassageSDK.podspec
-    rm PassageSDK.podspec.bak
+    sed -i.bak "s/:sha256 => \"[^\"]*\"/:sha256 => \"$ACTUAL_SHA256\"/g" PassageSDK.podspec.xcframework
+    rm PassageSDK.podspec.xcframework.bak
 
     print_success "Podspec updated with SHA256"
 else
     print_info "Skipping build and SHA256 calculation (resuming from manual steps)"
     # Extract SHA256 from existing podspec for summary
-    ACTUAL_SHA256=$(grep -E "sha256.*=>" PassageSDK.podspec | sed -E 's/.*"([^"]+)".*/\1/')
+    ACTUAL_SHA256=$(grep -E "sha256.*=>" PassageSDK.podspec.xcframework | sed -E 's/.*"([^"]+)".*/\1/')
     if [ -z "$ACTUAL_SHA256" ]; then
         print_warning "Could not extract SHA256 from podspec - it may need to be set manually"
         ACTUAL_SHA256="[Not found in podspec]"
@@ -161,7 +219,7 @@ fi
 
 # Validate podspec syntax and dependencies
 print_step "Validating podspec syntax and dependencies..."
-if ! pod lib lint PassageSDK.podspec --allow-warnings --skip-import-validation --skip-tests --sources='https://cdn.cocoapods.org/' --use-libraries 2>/dev/null; then
+if ! pod lib lint PassageSDK.podspec.xcframework --allow-warnings --skip-import-validation --skip-tests --sources='https://cdn.cocoapods.org/' --use-libraries 2>/dev/null; then
     print_warning "Local validation failed (expected - framework not present locally)"
     print_info "Will perform full validation after GitHub release is created"
 else
@@ -176,15 +234,17 @@ if [ "$DRY_RUN" = false ]; then
         print_step "Creating git tag..."
         if git tag -a "v$SDK_VERSION" -m "Release version $SDK_VERSION" 2>/dev/null; then
             print_success "Created git tag v$SDK_VERSION"
-            
+
             print_step "Pushing tag to origin..."
-            if git push origin "v$SDK_VERSION"; then
+            if git push origin "v$SDK_VERSION" 2>/dev/null; then
                 print_success "Tag pushed to origin"
             else
                 print_warning "Failed to push tag to origin"
+                print_info "You may need to push the tag manually: git push origin v$SDK_VERSION"
             fi
         else
-            print_warning "Tag v$SDK_VERSION already exists"
+            print_warning "Tag v$SDK_VERSION already exists or failed to create"
+            print_info "Check if this version has already been published"
         fi
     fi
 fi
@@ -202,11 +262,11 @@ if [ "$DRY_RUN" = false ]; then
     
     # Now perform full validation with the actual download
     print_step "Performing full podspec validation..."
-    if ! pod spec lint PassageSDK.podspec --allow-warnings --sources='https://cdn.cocoapods.org/' --use-libraries; then
+    if ! pod spec lint PassageSDK.podspec.xcframework --allow-warnings --sources='https://cdn.cocoapods.org/' --use-libraries; then
         print_error "Full podspec validation failed after GitHub release"
         print_info "Please check that the GitHub release was created correctly"
         # Restore original podspec
-        git checkout PassageSDK.podspec 2>/dev/null || true
+        git checkout PassageSDK.podspec.xcframework 2>/dev/null || true
         exit 1
     fi
     
@@ -225,7 +285,7 @@ if [ "$DRY_RUN" = false ]; then
     fi
     
     print_info "Publishing to CocoaPods trunk..."
-    if pod trunk push PassageSDK.podspec --allow-warnings --use-libraries; then
+    if pod trunk push PassageSDK.podspec.xcframework --allow-warnings --use-libraries; then
         print_success "Successfully published to CocoaPods!"
     else
         print_error "Failed to publish to CocoaPods"
@@ -238,7 +298,7 @@ fi
 # Cleanup: restore original podspec if needed
 if [ "$DRY_RUN" = true ]; then
     print_step "Restoring original podspec (dry run)..."
-    git checkout PassageSDK.podspec 2>/dev/null || true
+    git checkout PassageSDK.podspec.xcframework 2>/dev/null || true
 fi
 
 print_success "Publication process completed!"

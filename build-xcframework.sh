@@ -47,35 +47,46 @@ if [ -d "./build/PassageSDK-iphonesimulator.xcarchive/Products/Library/Framework
       -framework ./build/PassageSDK-iphonesimulator.xcarchive/Products/Library/Frameworks/PassageSDK.framework \
       -framework ./build/PassageSDK-iphoneos.xcarchive/Products/Library/Frameworks/PassageSDK.framework \
       -output ./build/PassageSDK.xcframework
-elif [ -f "./build/PassageSDK-iphonesimulator.xcarchive/Products/Users/mw/Objects/PassageSDK.o" ]; then
+elif [ -f "./build/PassageSDK-iphonesimulator.xcarchive/Products/usr/local/lib/PassageSDK.o" ] || [ -f "./build/PassageSDK-iphonesimulator.xcarchive/Products/Library/libPassageSDK.a" ] || find "./build/PassageSDK-iphonesimulator.xcarchive" -name "*.o" | grep -q .; then
     # Use static libraries (Swift Package Manager)
     echo "📦 Using static library build outputs..."
-    
+
     # For Swift Package Manager builds, we need to use the library approach
     # since xcodebuild doesn't properly handle static library frameworks
     echo "🔧 Creating XCFramework from static libraries..."
-    
+
+    # Find all object files in the archive
+    SIMULATOR_OBJ_FILES=$(find "./build/PassageSDK-iphonesimulator.xcarchive" -name "*.o" 2>/dev/null)
+    DEVICE_OBJ_FILES=$(find "./build/PassageSDK-iphoneos.xcarchive" -name "*.o" 2>/dev/null)
+
+    if [ -z "$SIMULATOR_OBJ_FILES" ] || [ -z "$DEVICE_OBJ_FILES" ]; then
+        echo "❌ Error: Could not find object files in build outputs!"
+        echo "Simulator object files found: $SIMULATOR_OBJ_FILES"
+        echo "Device object files found: $DEVICE_OBJ_FILES"
+        exit 1
+    fi
+
     # Copy Swift modules and headers if they exist
     SIMULATOR_MODULES=""
     DEVICE_MODULES=""
-    
+
     # Find Swift modules
     SIM_MODULE_PATH=$(find ./build/DerivedData -path "*Release-iphonesimulator*" -name "PassageSDK.swiftmodule" -type d | head -1)
     DEVICE_MODULE_PATH=$(find ./build/DerivedData -path "*Release-iphoneos*" -name "PassageSDK.swiftmodule" -type d | head -1)
-    
+
     if [ -n "$SIM_MODULE_PATH" ]; then
         SIMULATOR_MODULES="-headers $SIM_MODULE_PATH"
     fi
     if [ -n "$DEVICE_MODULE_PATH" ]; then
         DEVICE_MODULES="-headers $DEVICE_MODULE_PATH"
     fi
-    
+
     # Create static libraries from object files
     echo "📚 Creating static libraries from object files..."
-    
+
     # Create .a files from .o files
-    ar rcs ./build/libPassageSDK-iphonesimulator.a ./build/PassageSDK-iphonesimulator.xcarchive/Products/Users/mw/Objects/PassageSDK.o
-    ar rcs ./build/libPassageSDK-iphoneos.a ./build/PassageSDK-iphoneos.xcarchive/Products/Users/mw/Objects/PassageSDK.o
+    ar rcs ./build/libPassageSDK-iphonesimulator.a $SIMULATOR_OBJ_FILES
+    ar rcs ./build/libPassageSDK-iphoneos.a $DEVICE_OBJ_FILES
     
     # Create XCFramework from static libraries
     xcodebuild -create-xcframework \
@@ -86,7 +97,8 @@ else
     echo "❌ Error: Could not find build outputs!"
     echo "Expected either:"
     echo "  - ./build/PassageSDK-iphonesimulator.xcarchive/Products/Library/Frameworks/PassageSDK.framework"
-    echo "  - ./build/PassageSDK-iphonesimulator.xcarchive/Products/Users/mw/Objects/PassageSDK.o"
+    echo "  - Object files (.o) in ./build/PassageSDK-iphonesimulator.xcarchive/"
+    echo "  - Static library (.a) in ./build/PassageSDK-iphonesimulator.xcarchive/Products/Library/"
     exit 1
 fi
 
