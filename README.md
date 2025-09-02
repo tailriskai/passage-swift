@@ -176,26 +176,26 @@ Performance measurements conducted on iPhone 15 Pro with iOS 26 using real-time 
 
 #### Kroger.com (Complex E-commerce Website)
 
-| Metric      | Baseline | With Passage SDK | Overhead                                      |
-| ----------- | -------- | ---------------- | --------------------------------------------- |
-| Memory      | 9.2 MB   | 22.8 MB          | **+13.6 MB**                                  |
-| CPU         | 0.0%     | 0.0% avg         | **Minimal** (spikes to 18% during operations) |
-| App Startup | N/A      | N/A              | **No impact**                                 |
+| Metric      | Baseline | With Passage SDK | Overhead      | Maximum Spikes           |
+| ----------- | -------- | ---------------- | ------------- | ------------------------ |
+| Memory      | 9.2 MB   | 22.8 MB          | **+13.6 MB**  | 25.0 MB during page load |
+| CPU         | 0.0%     | 0.0% avg         | **Minimal**   | 18% during page load     |
+| App Startup | N/A      | N/A              | **No impact** | N/A                      |
 
 #### Audible.com (Media/Content Website)
 
-| Metric      | Baseline | With Passage SDK | Overhead                                     |
-| ----------- | -------- | ---------------- | -------------------------------------------- |
-| Memory      | 8.7 MB   | 23.4 MB          | **+14.7 MB**                                 |
-| CPU         | 0.0%     | 0.0% avg         | **Minimal** (spikes to 7% during operations) |
-| App Startup | N/A      | N/A              | **No impact**                                |
+| Metric      | Baseline | With Passage SDK | Overhead      | Maximum Spikes           |
+| ----------- | -------- | ---------------- | ------------- | ------------------------ |
+| Memory      | 8.7 MB   | 23.4 MB          | **+14.7 MB**  | 24.6 MB during page load |
+| CPU         | 0.0%     | 0.0% avg         | **Minimal**   | 7% during page load      |
+| App Startup | N/A      | N/A              | **No impact** | N/A                      |
 
 ### Performance Characteristics
 
 - **Memory Usage**: ~14-15 MB overhead for full SDK functionality including WebView rendering
 - **CPU Impact**: Minimal sustained usage with brief spikes during web page loading operations
-    - Kroger.com (complex e-commerce): Spikes up to 18% during heavy page load
-    - Audible.com (media content): Spikes up to 7% during typical page operations
+  - Kroger.com (complex e-commerce): Spikes up to 18% during heavy page load
+  - Audible.com (media content): Spikes up to 7% during typical page operations
 - **Web Page Complexity**: Performance scales with website complexity and JavaScript usage
 - **UI Responsiveness**: Maintains smooth 120/60+ FPS during normal usage
 - **Startup Time**: No measurable impact on app launch performance
