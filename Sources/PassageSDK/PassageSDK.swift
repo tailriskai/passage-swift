@@ -655,6 +655,29 @@ public class Passage: NSObject {
         passageLogger.info("[SDK] Force releasing all resources")
         cleanup()
     }
+
+    /// Force immediate release of WebView memory (for testing/debugging)
+    /// This immediately destroys WebView instances to free JavaScriptCore memory
+    public func forceReleaseWebViewMemory() {
+        passageLogger.info("[SDK] 🔧 Force releasing WebView memory for debugging")
+        releaseWebViewMemory()
+    }
+
+    /// Check if WebViews are still alive (for debugging memory issues)
+    /// Returns true if WebView instances exist, false if they have been released
+    public func hasActiveWebViews() -> Bool {
+        let hasWebViews = webViewController?.hasActiveWebViews() ?? false
+        passageLogger.debug("[SDK] WebView status check: \(hasWebViews ? "ACTIVE" : "RELEASED")")
+        return hasWebViews
+    }
+
+    /// Force immediate cleanup of WebViews (for debugging only)
+    /// This will destroy all WebViews immediately without waiting for modal dismissal
+    public func forceCleanupWebViews() {
+        passageLogger.info("[SDK] 🔧 Force cleaning up WebViews for debugging")
+        webViewController?.releaseWebViews()
+        passageLogger.info("[SDK] ✅ Force cleanup completed")
+    }
     
     // MARK: - JavaScript Injection
     
@@ -874,8 +897,8 @@ public class Passage: NSObject {
             passageLogger.info("[SDK] Navigation controller dismissed (success)")
             passageLogger.debug("[SDK] onExit after dismiss: \(self.onExit != nil ? "exists" : "nil")")
             
-            // Clear webview state after successful connection before cleanup
-            self.clearWebViewState()
+            // Note: We do NOT call clearWebViewState() here anymore
+            // We want to preserve the state (cookies, localStorage) for next session
             self.cleanupAfterClose()
         }
     }
@@ -891,8 +914,8 @@ public class Passage: NSObject {
         isClosing = true
         passageAnalytics.trackModalClosed(reason: "error")
         navigationController?.dismiss(animated: true) {
-            // Clear webview state after error before cleanup
-            self.clearWebViewState()
+            // Note: We do NOT call clearWebViewState() here anymore
+            // We want to preserve the state (cookies, localStorage) for next session
             self.cleanupAfterClose()
         }
     }
@@ -928,9 +951,8 @@ public class Passage: NSObject {
         passageLogger.info("[SDK] Setting isClosing to true")
         isClosing = true
         
-        // Clear webview state and perform cleanup
-        passageLogger.debug("[SDK] Clearing webview state and performing cleanup")
-        clearWebViewState()
+        // Perform cleanup (which will release memory but preserve cookies/storage)
+        passageLogger.debug("[SDK] Performing cleanup")
         cleanupAfterClose()
     }
     
@@ -981,6 +1003,11 @@ public class Passage: NSObject {
             await remoteControl?.emitModalExit()
             remoteControl?.disconnect()
             
+            // Release WebView memory immediately to free the 512MB allocation
+            // Note: This preserves cookies/localStorage as they're stored in WKWebsiteDataStore
+            passageLogger.info("[SDK] 🧹 Releasing WebView memory to free JavaScriptCore allocation...")
+            self.releaseWebViewMemory()
+            
             // Reset closing flag after everything is complete
             // This must be the last thing we do to ensure all cleanup is done
             passageLogger.info("[SDK] Resetting isClosing flag from true to false")
@@ -988,6 +1015,25 @@ public class Passage: NSObject {
             
             passageLogger.info("[SDK] ✅ Async cleanup completed - isClosing: \(self.isClosing)")
         }
+    }
+    
+    private func releaseWebViewMemory() {
+        passageLogger.info("[SDK] 🗑️ Releasing WebView memory...")
+
+        // First, tell the WebViewController to release its WebView instances
+        // This will free the JavaScriptCore memory (512MB allocation)
+        webViewController?.releaseWebViews()
+
+        // Then destroy the view controller instances
+        webViewController = nil
+        navigationController = nil
+
+        // Note: We intentionally do NOT call clearWebViewData() here
+        // This preserves cookies, localStorage, and sessionStorage
+        // which are stored in WKWebsiteDataStore.default()
+
+        passageLogger.info("[SDK] ✅ WebView memory released - cookies and storage preserved")
+        passageLogger.info("[SDK] 📊 Next open() will create fresh WebView instances")
     }
     
     private func cleanup() {

@@ -1139,8 +1139,12 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     func loadURL(_ url: URL) {
         DispatchQueue.main.async { [weak self] in
+            guard let self = self, let uiWebView = self.uiWebView else {
+                passageLogger.warn("[WEBVIEW] Cannot load URL - UI WebView has been released")
+                return
+            }
             let request = URLRequest(url: url)
-            self?.uiWebView.load(request)
+            uiWebView.load(request)
         }
     }
     
@@ -1156,9 +1160,17 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 let request = URLRequest(url: urlObj)
                 // Use the currently visible webview
                 if self.isShowingUIWebView {
-                    self.uiWebView?.load(request)
+                    if let uiWebView = self.uiWebView {
+                        uiWebView.load(request)
+                    } else {
+                        passageLogger.warn("[WEBVIEW] Cannot navigateTo - UI WebView has been released")
+                    }
                 } else {
-                    self.automationWebView?.load(request)
+                    if let automationWebView = self.automationWebView {
+                        automationWebView.load(request)
+                    } else {
+                        passageLogger.warn("[WEBVIEW] Cannot navigateTo - Automation WebView has been released")
+                    }
                 }
             }
         }
@@ -1335,29 +1347,35 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     func showUIWebView() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            
-            // Cancel any ongoing animation
-            if self.isAnimating {
-                self.uiWebView.layer.removeAllAnimations()
-                self.automationWebView.layer.removeAllAnimations()
-                self.isAnimating = false
-            }
-            
-            // If already showing UI webview, ensure visual state is correct
-            if self.isShowingUIWebView {
-                self.view.bringSubviewToFront(self.uiWebView)
-                self.uiWebView.alpha = 1
-                self.automationWebView.alpha = 0
+
+            // Check if WebViews are still available (not released)
+            guard let uiWebView = self.uiWebView, let automationWebView = self.automationWebView else {
+                passageLogger.warn("[WEBVIEW] Cannot show UI WebView - WebViews have been released")
                 return
             }
-            
+
+            // Cancel any ongoing animation
+            if self.isAnimating {
+                uiWebView.layer.removeAllAnimations()
+                automationWebView.layer.removeAllAnimations()
+                self.isAnimating = false
+            }
+
+            // If already showing UI webview, ensure visual state is correct
+            if self.isShowingUIWebView {
+                self.view.bringSubviewToFront(uiWebView)
+                uiWebView.alpha = 1
+                automationWebView.alpha = 0
+                return
+            }
+
             passageLogger.debug("[WEBVIEW] Switching to UI webview")
             self.isAnimating = true
-            self.view.bringSubviewToFront(self.uiWebView)
-            
+            self.view.bringSubviewToFront(uiWebView)
+
             UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseInOut, .allowUserInteraction], animations: {
-                self.uiWebView.alpha = 1
-                self.automationWebView.alpha = 0
+                uiWebView.alpha = 1
+                automationWebView.alpha = 0
             }, completion: { _ in
                 self.isAnimating = false
                 self.isShowingUIWebView = true
@@ -1369,34 +1387,41 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     func showAutomationWebView() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+
             // In debug single-webview mode, automation webview is not created
             if self.debugSingleWebViewUrl != nil || self.automationWebView == nil {
                 passageLogger.debug("[DEBUG MODE] Ignoring showAutomationWebView (automation webview unavailable)")
                 return
             }
-            
-            // Cancel any ongoing animation
-            if self.isAnimating {
-                self.uiWebView.layer.removeAllAnimations()
-                self.automationWebView.layer.removeAllAnimations()
-                self.isAnimating = false
-            }
-            
-            // If already showing automation webview, ensure visual state is correct
-            if !self.isShowingUIWebView {
-                self.view.bringSubviewToFront(self.automationWebView)
-                self.automationWebView.alpha = 1
-                self.uiWebView.alpha = 0
+
+            // Check if WebViews are still available (not released)
+            guard let uiWebView = self.uiWebView, let automationWebView = self.automationWebView else {
+                passageLogger.warn("[WEBVIEW] Cannot show Automation WebView - WebViews have been released")
                 return
             }
-            
+
+            // Cancel any ongoing animation
+            if self.isAnimating {
+                uiWebView.layer.removeAllAnimations()
+                automationWebView.layer.removeAllAnimations()
+                self.isAnimating = false
+            }
+
+            // If already showing automation webview, ensure visual state is correct
+            if !self.isShowingUIWebView {
+                self.view.bringSubviewToFront(automationWebView)
+                automationWebView.alpha = 1
+                uiWebView.alpha = 0
+                return
+            }
+
             passageLogger.debug("[WEBVIEW] Switching to automation webview")
             self.isAnimating = true
-            self.view.bringSubviewToFront(self.automationWebView)
-            
+            self.view.bringSubviewToFront(automationWebView)
+
             UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseInOut, .allowUserInteraction], animations: {
-                self.automationWebView.alpha = 1
-                self.uiWebView.alpha = 0
+                automationWebView.alpha = 1
+                uiWebView.alpha = 0
             }, completion: { _ in
                 self.isAnimating = false
                 self.isShowingUIWebView = false
@@ -1428,6 +1453,86 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         return isShowingUIWebView ? PassageConstants.WebViewTypes.ui : PassageConstants.WebViewTypes.automation
     }
     
+    // Release WebView instances to free JavaScriptCore memory
+    func releaseWebViews() {
+        passageLogger.info("[WEBVIEW] 🗑️ Releasing WebView instances to free JavaScriptCore memory")
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            // Stop any ongoing loading first
+            if let uiWebView = self.uiWebView {
+                if uiWebView.isLoading {
+                    uiWebView.stopLoading()
+                    passageLogger.debug("[WEBVIEW] Stopped loading on UI WebView")
+                }
+            }
+
+            if let automationWebView = self.automationWebView {
+                if automationWebView.isLoading {
+                    automationWebView.stopLoading()
+                    passageLogger.debug("[WEBVIEW] Stopped loading on automation WebView")
+                }
+            }
+
+            // Force unload content to terminate JavaScript execution
+            // This is the key step to free the 512MB JavaScriptCore allocation
+            if let uiWebView = self.uiWebView {
+                uiWebView.loadHTMLString("", baseURL: nil)
+                passageLogger.debug("[WEBVIEW] Force unloaded UI WebView content")
+            }
+
+            if let automationWebView = self.automationWebView {
+                automationWebView.loadHTMLString("", baseURL: nil)
+                passageLogger.debug("[WEBVIEW] Force unloaded automation WebView content")
+            }
+
+            // Small delay to let the unload complete
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                guard let self = self else { return }
+
+                // Remove from view hierarchy
+                self.uiWebView?.removeFromSuperview()
+                self.automationWebView?.removeFromSuperview()
+                passageLogger.debug("[WEBVIEW] WebViews removed from view hierarchy")
+
+                // Clear navigation delegates to break retain cycles
+                self.uiWebView?.navigationDelegate = nil
+                self.uiWebView?.uiDelegate = nil
+                self.automationWebView?.navigationDelegate = nil
+                self.automationWebView?.uiDelegate = nil
+
+                // Clear message handlers
+                self.uiWebView?.configuration.userContentController.removeAllUserScripts()
+                self.uiWebView?.configuration.userContentController.removeAllScriptMessageHandlers()
+                self.automationWebView?.configuration.userContentController.removeAllUserScripts()
+                self.automationWebView?.configuration.userContentController.removeAllScriptMessageHandlers()
+
+                // Finally, release the WebView instances
+                // This should terminate the WebContent processes
+                self.uiWebView = nil
+                self.automationWebView = nil
+                passageLogger.debug("[WEBVIEW] WebView references set to nil")
+
+                // Clear related state
+                self.currentScreenshot = nil
+                self.previousScreenshot = nil
+                self.pendingUserActionCommand = nil
+
+                // Cancel any pending timers
+                self.navigationTimeoutTimer?.invalidate()
+                self.navigationTimeoutTimer = nil
+
+                passageLogger.info("[WEBVIEW] ✅ WebView instances fully released - JavaScriptCore memory should be freed")
+            }
+        }
+    }
+
+    // Check if WebViews are still active (for debugging memory issues)
+    func hasActiveWebViews() -> Bool {
+        return uiWebView != nil || automationWebView != nil
+    }
+
     // Reset URL state to empty/initial values
     func resetURLState() {
         passageLogger.info("[WEBVIEW] Resetting URL state to empty/initial values")
