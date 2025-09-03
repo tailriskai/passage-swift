@@ -6,7 +6,7 @@ For complete integration guides and examples, visit our [documentation](https://
 
 ## Requirements
 
-- iOS 16+
+- iOS 15.1+
 - Swift 5+
 - Xcode 13+
 

@@ -11,7 +11,7 @@ Pod::Spec.new do |spec|
   spec.license      = { :type => "MIT", :text => "Copyright (c) 2025 Passage Inc. All rights reserved." }
   spec.author       = { "Passage" => "developers@tailrisk.ai" }
   
-  spec.ios.deployment_target = "16.0"
+  spec.ios.deployment_target = "15.1"
   spec.swift_version = "5.10"
   
   spec.source       = { 
