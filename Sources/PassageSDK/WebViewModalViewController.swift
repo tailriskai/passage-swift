@@ -68,18 +68,26 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         super.viewDidLoad()
         
         passageLogger.info("[WEBVIEW] ========== VIEW DID LOAD ==========")
+        passageLogger.info("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
         passageLogger.info("[WEBVIEW] Initial URL: \(url.isEmpty ? "empty" : passageLogger.truncateUrl(url, maxLength: 100))")
         passageLogger.info("[WEBVIEW] Show grabber: \(showGrabber)")
         passageLogger.info("[WEBVIEW] Title text: \(titleText)")
         passageLogger.info("[WEBVIEW] Force simple webview: \(forceSimpleWebView)")
         passageLogger.info("[WEBVIEW] Debug single webview URL: \(debugSingleWebViewUrl ?? "nil")")
+        passageLogger.info("[WEBVIEW] Existing webviews - UI: \(uiWebView != nil), Automation: \(automationWebView != nil)")
+        
+        // Log view state
+        passageLogger.info("[WEBVIEW] View loaded: \(isViewLoaded)")
+        passageLogger.info("[WEBVIEW] View in window: \(view.window != nil)")
+        passageLogger.info("[WEBVIEW] View superview: \(view.superview != nil)")
         
         // Setup screenshot accessors for remote control
         setupScreenshotAccessors()
         
         setupUI()
-        setupWebViews()
-        setupNotificationObservers()
+        
+        // Don't set up notification observers here - do it in viewDidAppear
+        // to avoid duplicate observers from reused view controllers
         
         // Hide navigation bar completely to remove white header
         navigationController?.setNavigationBarHidden(true, animated: false)
@@ -110,9 +118,30 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+
+        passageLogger.info("[WEBVIEW] ========== VIEW DID APPEAR ==========")
+        passageLogger.info("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
+        passageLogger.info("[WEBVIEW] Webview states - UI: \(uiWebView != nil), Automation: \(automationWebView != nil)")
+        passageLogger.info("[WEBVIEW] Webview superviews - UI: \(uiWebView?.superview != nil), Automation: \(automationWebView?.superview != nil)")
         
-        passageLogger.info("[WEBVIEW] View appeared")
-        
+        // Re-add notification observers (they were removed in viewWillDisappear)
+        setupNotificationObservers()
+
+        // Ensure WebViews are set up only if they're not already properly configured
+        if uiWebView == nil || automationWebView == nil || uiWebView?.superview == nil || automationWebView?.superview == nil {
+            passageLogger.info("[WEBVIEW] WebViews not properly set up, initializing...")
+            setupWebViews()
+            
+            // Load any pending URL after webviews are set up
+            if let pendingURL = initialURLToLoad {
+                passageLogger.info("[WEBVIEW] Loading pending URL after webview setup: \(passageLogger.truncateUrl(pendingURL, maxLength: 100))")
+                initialURLToLoad = nil
+                loadURL(pendingURL)
+            }
+        } else {
+            passageLogger.debug("[WEBVIEW] WebViews already properly configured")
+        }
+
         // Quick validation - only log if there are issues
         if uiWebView == nil {
             passageLogger.error("[WEBVIEW] UI WebView is nil!")
@@ -137,18 +166,29 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         
+        passageLogger.info("[WEBVIEW] ========== VIEW WILL DISAPPEAR ==========")
+        passageLogger.info("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
+        
         // Cancel any pending navigation timeout
         navigationTimeoutTimer?.invalidate()
         navigationTimeoutTimer = nil
+        
+        // Remove notification observers to prevent duplicate notifications
+        NotificationCenter.default.removeObserver(self)
+        passageLogger.info("[WEBVIEW] Removed all notification observers")
     }
     
     deinit {
+        passageLogger.info("[WEBVIEW] ========== DEINIT ==========")
+        passageLogger.info("[WEBVIEW] View controller instance being deallocated: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
+        
         // Clean up timer
         navigationTimeoutTimer?.invalidate()
         navigationTimeoutTimer = nil
         
         // Remove notification observers
         NotificationCenter.default.removeObserver(self)
+        passageLogger.info("[WEBVIEW] Notification observers removed")
     }
     
     private func setupUI() {
@@ -160,6 +200,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     private func setupNotificationObservers() {
         passageLogger.info("[WEBVIEW] Setting up notification observers")
+        
+        // Remove any existing observers first to prevent duplicates
+        NotificationCenter.default.removeObserver(self)
         
         // Observe webview switching notifications
         NotificationCenter.default.addObserver(
@@ -219,11 +262,13 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     @objc private func showUIWebViewNotification() {
         passageLogger.info("[WEBVIEW] Received showUIWebView notification")
+        passageLogger.debug("[WEBVIEW] Notification source: \(String(describing: Thread.callStackSymbols[0...3]))")
         showUIWebView()
     }
     
     @objc private func showAutomationWebViewNotification() {
         passageLogger.info("[WEBVIEW] Received showAutomationWebView notification")
+        passageLogger.debug("[WEBVIEW] Notification source: \(String(describing: Thread.callStackSymbols[0...3]))")
         showAutomationWebView()
     }
     
@@ -252,14 +297,61 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     }
     
     @objc private func injectScriptNotification(_ notification: Notification) {
+        injectScriptNotification(notification, retryCount: 0)
+    }
+
+    private func injectScriptNotification(_ notification: Notification, retryCount: Int) {
         guard let script = notification.userInfo?["script"] as? String,
               let commandId = notification.userInfo?["commandId"] as? String else {
             passageLogger.error("[WEBVIEW] Inject script notification missing data")
             return
         }
-        
+
         let commandType = notification.userInfo?["commandType"] as? String ?? "unknown"
-        passageLogger.info("[WEBVIEW] Executing \(commandType) script for command: \(commandId)")
+        passageLogger.info("[WEBVIEW] Executing \(commandType) script for command: \(commandId) (retry: \(retryCount))")
+        passageLogger.debug("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
+        passageLogger.debug("[WEBVIEW] Webview states - UI: \(uiWebView != nil), Automation: \(automationWebView != nil)")
+
+        // Check if WebViews are ready for script injection
+        guard areWebViewsReady() else {
+            // Limit retries to prevent infinite loops
+            let maxRetries = 10
+
+            if retryCount >= maxRetries {
+                passageLogger.error("[WEBVIEW] Max retries (\(maxRetries)) exceeded, failing script injection")
+                passageLogger.error("[WEBVIEW] Final state - UI: \(uiWebView != nil), Automation: \(automationWebView != nil)")
+                // Send error result back to remote control
+                NotificationCenter.default.post(
+                    name: .scriptExecutionResult,
+                    object: nil,
+                    userInfo: [
+                        "commandId": commandId,
+                        "success": false,
+                        "error": "WebViews not ready for script injection after \(maxRetries) retries - page may not be loaded"
+                    ]
+                )
+                return
+            }
+
+            passageLogger.warn("[WEBVIEW] WebViews not ready for script injection, will retry... (attempt \(retryCount + 1)/\(maxRetries))")
+            passageLogger.debug("[WEBVIEW] WebViews ready check failed, scheduling retry")
+
+            // Retry after a short delay instead of immediately failing
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self = self else { return }
+
+                // Re-check if WebViews are ready now
+                if self.areWebViewsReady() {
+                    passageLogger.info("[WEBVIEW] WebViews now ready, proceeding with script injection")
+                    // Re-call the method with incremented retry count
+                    self.injectScriptNotification(notification, retryCount: retryCount + 1)
+                } else {
+                    // Try again with incremented retry count
+                    self.injectScriptNotification(notification, retryCount: retryCount + 1)
+                }
+            }
+            return
+        }
         
         // Check if this is an async script that uses window.passage.postMessage
         let usesWindowPassage = script.contains("window.passage.postMessage")
@@ -569,10 +661,20 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     }
     
     private func setupWebViews() {
-        // Check if webviews are already created
-        if uiWebView != nil {
-            passageLogger.info("[WEBVIEW] WebViews already created, skipping setup")
+        passageLogger.info("[WEBVIEW] ========== SETUP WEBVIEWS ==========")
+        passageLogger.info("[WEBVIEW] Current state - UI: \(uiWebView != nil), Automation: \(automationWebView != nil)")
+        passageLogger.info("[WEBVIEW] Superviews - UI: \(uiWebView?.superview != nil), Automation: \(automationWebView?.superview != nil)")
+        
+        // Check if webviews are already created and active
+        if uiWebView != nil && automationWebView != nil && uiWebView.superview != nil && automationWebView.superview != nil {
+            passageLogger.info("[WEBVIEW] WebViews already created and active, skipping setup")
             return
+        }
+
+        // If WebViews were previously released, clean up any remaining references
+        if uiWebView != nil || automationWebView != nil {
+            passageLogger.info("[WEBVIEW] Cleaning up partially released WebViews before recreation")
+            releaseWebViews()
         }
         
         // If simple mode or debugSingleWebViewUrl is set, render only one webview and load that URL
@@ -1076,6 +1178,13 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         // Reset state for new session
         resetForNewSession()
         
+        // Ensure webviews are set up before loading
+        if uiWebView == nil || automationWebView == nil {
+            passageLogger.warn("[WEBVIEW] WebViews not ready, storing URL to load later")
+            initialURLToLoad = urlString
+            return
+        }
+        
         // Load URL
         DispatchQueue.main.async { [weak self] in
             guard let self = self else {
@@ -1085,6 +1194,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             
             guard let webView = self.uiWebView else {
                 passageLogger.error("[WEBVIEW] ❌ UI WebView is nil")
+                // Store URL to load when webview is ready
+                self.initialURLToLoad = urlString
                 return
             }
             
@@ -1180,6 +1291,24 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     func navigateInAutomationWebView(_ url: String) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            
+            // Ensure webviews are ready
+            guard self.automationWebView != nil else {
+                passageLogger.error("[WEBVIEW] Cannot navigate - automation webview is nil")
+                
+                // If view is loaded, try to setup webviews
+                if self.isViewLoaded && self.view.window != nil {
+                    passageLogger.info("[WEBVIEW] Attempting to setup webviews before navigation")
+                    self.setupWebViews()
+                    
+                    // Try again after setup
+                    if self.automationWebView != nil {
+                        self.navigateInAutomationWebView(url)
+                        return
+                    }
+                }
+                return
+            }
             
             if let urlObj = URL(string: url) {
                 passageLogger.info("[WEBVIEW] Navigating to: \(passageLogger.truncateUrl(url, maxLength: 100))")
@@ -1389,14 +1518,33 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             guard let self = self else { return }
 
             // In debug single-webview mode, automation webview is not created
-            if self.debugSingleWebViewUrl != nil || self.automationWebView == nil {
-                passageLogger.debug("[DEBUG MODE] Ignoring showAutomationWebView (automation webview unavailable)")
+            if self.debugSingleWebViewUrl != nil {
+                passageLogger.debug("[DEBUG MODE] Ignoring showAutomationWebView (debug mode)")
                 return
             }
 
             // Check if WebViews are still available (not released)
+            if self.uiWebView == nil || self.automationWebView == nil {
+                passageLogger.warn("[WEBVIEW] WebViews not available - attempting to setup")
+                
+                // If view is loaded, try to setup webviews
+                if self.isViewLoaded && self.view.window != nil {
+                    passageLogger.info("[WEBVIEW] View is loaded, setting up webviews")
+                    self.setupWebViews()
+                    
+                    // Check again after setup
+                    if self.uiWebView == nil || self.automationWebView == nil {
+                        passageLogger.error("[WEBVIEW] Failed to setup webviews")
+                        return
+                    }
+                } else {
+                    passageLogger.error("[WEBVIEW] Cannot setup webviews - view not ready")
+                    return
+                }
+            }
+
             guard let uiWebView = self.uiWebView, let automationWebView = self.automationWebView else {
-                passageLogger.warn("[WEBVIEW] Cannot show Automation WebView - WebViews have been released")
+                passageLogger.error("[WEBVIEW] Cannot show Automation WebView - WebViews are nil")
                 return
             }
 
@@ -1456,81 +1604,123 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     // Release WebView instances to free JavaScriptCore memory
     func releaseWebViews() {
         passageLogger.info("[WEBVIEW] 🗑️ Releasing WebView instances to free JavaScriptCore memory")
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-
-            // Stop any ongoing loading first
-            if let uiWebView = self.uiWebView {
-                if uiWebView.isLoading {
-                    uiWebView.stopLoading()
-                    passageLogger.debug("[WEBVIEW] Stopped loading on UI WebView")
-                }
-            }
-
-            if let automationWebView = self.automationWebView {
-                if automationWebView.isLoading {
-                    automationWebView.stopLoading()
-                    passageLogger.debug("[WEBVIEW] Stopped loading on automation WebView")
-                }
-            }
-
-            // Force unload content to terminate JavaScript execution
-            // This is the key step to free the 512MB JavaScriptCore allocation
-            if let uiWebView = self.uiWebView {
-                uiWebView.loadHTMLString("", baseURL: nil)
-                passageLogger.debug("[WEBVIEW] Force unloaded UI WebView content")
-            }
-
-            if let automationWebView = self.automationWebView {
-                automationWebView.loadHTMLString("", baseURL: nil)
-                passageLogger.debug("[WEBVIEW] Force unloaded automation WebView content")
-            }
-
-            // Small delay to let the unload complete
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                guard let self = self else { return }
-
-                // Remove from view hierarchy
-                self.uiWebView?.removeFromSuperview()
-                self.automationWebView?.removeFromSuperview()
-                passageLogger.debug("[WEBVIEW] WebViews removed from view hierarchy")
-
-                // Clear navigation delegates to break retain cycles
-                self.uiWebView?.navigationDelegate = nil
-                self.uiWebView?.uiDelegate = nil
-                self.automationWebView?.navigationDelegate = nil
-                self.automationWebView?.uiDelegate = nil
-
-                // Clear message handlers
-                self.uiWebView?.configuration.userContentController.removeAllUserScripts()
-                self.uiWebView?.configuration.userContentController.removeAllScriptMessageHandlers()
-                self.automationWebView?.configuration.userContentController.removeAllUserScripts()
-                self.automationWebView?.configuration.userContentController.removeAllScriptMessageHandlers()
-
-                // Finally, release the WebView instances
-                // This should terminate the WebContent processes
-                self.uiWebView = nil
-                self.automationWebView = nil
-                passageLogger.debug("[WEBVIEW] WebView references set to nil")
-
-                // Clear related state
-                self.currentScreenshot = nil
-                self.previousScreenshot = nil
-                self.pendingUserActionCommand = nil
-
-                // Cancel any pending timers
-                self.navigationTimeoutTimer?.invalidate()
-                self.navigationTimeoutTimer = nil
-
-                passageLogger.info("[WEBVIEW] ✅ WebView instances fully released - JavaScriptCore memory should be freed")
+        passageLogger.info("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
+        
+        // If we're already on the main thread, execute synchronously
+        if Thread.isMainThread {
+            performWebViewRelease()
+        } else {
+            // If not on main thread, execute synchronously on main thread
+            DispatchQueue.main.sync { [weak self] in
+                self?.performWebViewRelease()
             }
         }
+    }
+    
+    private func performWebViewRelease() {
+        // Stop any ongoing loading first
+        if let uiWebView = self.uiWebView {
+            if uiWebView.isLoading {
+                uiWebView.stopLoading()
+                passageLogger.debug("[WEBVIEW] Stopped loading on UI WebView")
+            }
+        }
+
+        if let automationWebView = self.automationWebView {
+            if automationWebView.isLoading {
+                automationWebView.stopLoading()
+                passageLogger.debug("[WEBVIEW] Stopped loading on automation WebView")
+            }
+        }
+
+        // Force unload content to terminate JavaScript execution
+        // This is the key step to free the 512MB JavaScriptCore allocation
+        if let uiWebView = self.uiWebView {
+            uiWebView.loadHTMLString("", baseURL: nil)
+            passageLogger.debug("[WEBVIEW] Force unloaded UI WebView content")
+        }
+
+        if let automationWebView = self.automationWebView {
+            automationWebView.loadHTMLString("", baseURL: nil)
+            passageLogger.debug("[WEBVIEW] Force unloaded automation WebView content")
+        }
+
+        // Remove from view hierarchy
+        self.uiWebView?.removeFromSuperview()
+        self.automationWebView?.removeFromSuperview()
+        passageLogger.debug("[WEBVIEW] WebViews removed from view hierarchy")
+
+        // Clear navigation delegates to break retain cycles
+        self.uiWebView?.navigationDelegate = nil
+        self.uiWebView?.uiDelegate = nil
+        self.automationWebView?.navigationDelegate = nil
+        self.automationWebView?.uiDelegate = nil
+
+        // Clear message handlers
+        self.uiWebView?.configuration.userContentController.removeAllUserScripts()
+        self.uiWebView?.configuration.userContentController.removeAllScriptMessageHandlers()
+        self.automationWebView?.configuration.userContentController.removeAllUserScripts()
+        self.automationWebView?.configuration.userContentController.removeAllScriptMessageHandlers()
+
+        // Finally, release the WebView instances
+        // This should terminate the WebContent processes
+        self.uiWebView = nil
+        self.automationWebView = nil
+        passageLogger.debug("[WEBVIEW] WebView references set to nil")
+
+        // Clear related state
+        self.currentScreenshot = nil
+        self.previousScreenshot = nil
+        self.pendingUserActionCommand = nil
+
+        // Cancel any pending timers
+        self.navigationTimeoutTimer?.invalidate()
+        self.navigationTimeoutTimer = nil
+
+        passageLogger.info("[WEBVIEW] ✅ WebView instances fully released - JavaScriptCore memory should be freed")
     }
 
     // Check if WebViews are still active (for debugging memory issues)
     func hasActiveWebViews() -> Bool {
         return uiWebView != nil || automationWebView != nil
+    }
+
+    func areWebViewsReady() -> Bool {
+        passageLogger.debug("[WEBVIEW] Checking if WebViews are ready for script injection")
+
+        // Check if both WebViews exist and are properly loaded
+        guard let uiWebView = uiWebView, let automationWebView = automationWebView else {
+            passageLogger.debug("[WEBVIEW] ❌ WebViews don't exist: uiWebView=\(uiWebView != nil), automationWebView=\(automationWebView != nil)")
+            
+            // If webviews don't exist but view is loaded, try to set them up
+            if isViewLoaded && view.window != nil {
+                passageLogger.info("[WEBVIEW] View is loaded but webviews are nil - attempting to setup webviews")
+                setupWebViews()
+                
+                // Check again after setup
+                if let _ = self.uiWebView, let _ = self.automationWebView {
+                    passageLogger.info("[WEBVIEW] WebViews successfully created during ready check")
+                    return areWebViewsReady() // Recursive call to do full checks
+                }
+            }
+            
+            return false
+        }
+
+        // Check if they're in the view hierarchy
+        guard uiWebView.superview != nil && automationWebView.superview != nil else {
+            passageLogger.debug("[WEBVIEW] ❌ WebViews not in view hierarchy: uiWebView.superview=\(uiWebView.superview != nil), automationWebView.superview=\(automationWebView.superview != nil)")
+            return false
+        }
+
+        // Check if automation WebView has a URL (indicates it's been initialized)
+        guard automationWebView.url != nil else {
+            passageLogger.debug("[WEBVIEW] ❌ Automation WebView has no URL")
+            return false
+        }
+
+        passageLogger.debug("[WEBVIEW] ✅ WebViews are ready for script injection")
+        return true
     }
 
     // Reset URL state to empty/initial values
@@ -1837,7 +2027,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             automationWebView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             automationWebView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             automationWebView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            automationWebView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            automationWebView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
         ])
         
         // Set initial visibility (automation webview starts hidden)

@@ -348,6 +348,7 @@ public class Passage: NSObject {
             }
             
             // Create web view controller only once (lazy initialization)
+            passageLogger.info("[SDK] Checking webViewController: \(self.webViewController == nil ? "nil - will create new" : "exists - will reuse")")
             if self.webViewController == nil {
                 passageLogger.info("[SDK] Creating new WebViewController (first time)")
                 let webVC = WebViewModalViewController()
@@ -372,6 +373,28 @@ public class Passage: NSObject {
                 self.webViewController = webVC
             } else {
                 passageLogger.info("[SDK] Reusing existing WebViewController")
+                // Check if the webviews inside are still valid
+                if let existingWebVC = self.webViewController {
+                    let hasWebViews = existingWebVC.hasActiveWebViews()
+                    passageLogger.info("[SDK] Existing WebViewController has active webviews: \(hasWebViews)")
+                    if !hasWebViews {
+                        passageLogger.warn("[SDK] WebViewController exists but webviews were released - recreating")
+                        self.webViewController = nil
+                        
+                        // Create new instance
+                        let webVC = WebViewModalViewController()
+                        webVC.delegate = self
+                        webVC.remoteControl = self.remoteControl
+                        webVC.showGrabber = true
+                        webVC.onWebviewChange = { [weak self] webviewType in
+                            self?.handleWebviewChange(webviewType)
+                        }
+                        webVC.onMessage = { [weak self] message in
+                            self?.handleMessage(message)
+                        }
+                        self.webViewController = webVC
+                    }
+                }
             }
             
             guard let webVC = self.webViewController else {
@@ -1019,13 +1042,20 @@ public class Passage: NSObject {
     
     private func releaseWebViewMemory() {
         passageLogger.info("[SDK] 🗑️ Releasing WebView memory...")
+        passageLogger.info("[SDK] Current webViewController: \(webViewController == nil ? "nil" : "exists")")
+        passageLogger.info("[SDK] Thread: \(Thread.isMainThread ? "Main" : "Background")")
 
         // First, tell the WebViewController to release its WebView instances
         // This will free the JavaScriptCore memory (512MB allocation)
-        webViewController?.releaseWebViews()
+        if let webVC = webViewController {
+            passageLogger.info("[SDK] Calling releaseWebViews on existing WebViewController")
+            webVC.releaseWebViews()
+        }
 
         // Then destroy the view controller instances
+        passageLogger.info("[SDK] Setting webViewController to nil")
         webViewController = nil
+        passageLogger.info("[SDK] Setting navigationController to nil")
         navigationController = nil
 
         // Note: We intentionally do NOT call clearWebViewData() here

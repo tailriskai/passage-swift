@@ -1631,6 +1631,7 @@ class RemoteControlManager {
         isConnected = false
         intentToken = nil
         lastUserActionCommand = nil
+        currentCommand = nil
         currentWebViewType = PassageConstants.WebViewTypes.ui
         connectionData = nil
         connectionId = nil
