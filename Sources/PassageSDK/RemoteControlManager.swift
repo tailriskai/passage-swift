@@ -765,7 +765,8 @@ class RemoteControlManager {
                     self?.onDataComplete?(dataResult)
                 }
             } else {
-                passageLogger.warn("[SOCKET EVENT] ❌ Data storage conditions not met - data will not be available for success callback")
+                // Data storage conditions not met - data will not be available for success callback
+                // This is normal for pending/connecting states
             }
         }
         

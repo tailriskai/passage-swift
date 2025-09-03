@@ -48,6 +48,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     private var currentScreenshot: String?
     private var previousScreenshot: String?
     
+    // Store automation webview custom user agent from configuration
+    private var automationUserAgent: String?
+    
     // Store initial URL to load after view appears
     private var initialURLToLoad: String?
     
@@ -623,8 +626,13 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         // Create web view
         let webView = WKWebView(frame: .zero, configuration: configuration)
         
-        // In debug/simple mode, set a Safari-like user agent
-        if debugSingleWebViewUrl != nil || forceSimpleWebView {
+        // Set user agent based on webview type and configuration
+        if webViewType == PassageConstants.WebViewTypes.automation && automationUserAgent != nil {
+            // Use stored automation user agent from configuration
+            webView.customUserAgent = automationUserAgent
+            passageLogger.debug("[WEBVIEW] Applied stored user agent to automation webview: \(automationUserAgent ?? "")")
+        } else if debugSingleWebViewUrl != nil || forceSimpleWebView {
+            // In debug/simple mode, set a Safari-like user agent
             webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         }
         webView.navigationDelegate = self
@@ -1950,7 +1958,17 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             guard let self = self else { return }
             
             passageLogger.debug("[WEBVIEW] Setting automation user agent: \(userAgent)")
-            self.automationWebView?.customUserAgent = userAgent
+            
+            // Store the user agent for when webview is recreated
+            self.automationUserAgent = userAgent.isEmpty ? nil : userAgent
+            
+            // Apply to current webview if it exists
+            if let automationWebView = self.automationWebView {
+                automationWebView.customUserAgent = userAgent
+                passageLogger.debug("[WEBVIEW] Applied user agent to existing automation webview")
+            } else {
+                passageLogger.debug("[WEBVIEW] Automation webview not yet created, user agent will be applied when created")
+            }
         }
     }
     
