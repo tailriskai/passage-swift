@@ -819,7 +819,7 @@ class RemoteControlManager {
                 )
             }
         } else {
-            let errorMessage = (data as? [String: Any])?["error"] as? String ?? "Done command indicates failure"
+            let errorMessage = (data as? [String: Any])?["error"] as? String ?? ""
             sendError(commandId: command.id, error: errorMessage)
             
             let errorData = PassageErrorData(error: errorMessage, data: data)

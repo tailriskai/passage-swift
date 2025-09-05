@@ -25,6 +25,8 @@ class ViewController: UIViewController {
     private let integrationOptions: [(value: String, label: String)] = [
         ("passage-test-captcha", "Passage Test Integration (with CAPTCHA)"),
         ("passage-test", "Passage Test Integration"),
+        ("amazon", "Amazon"),
+        ("uber", "Uber"),
         ("kroger", "Kroger"),
         ("kindle", "Kindle"),
         ("audible", "Audible"),
@@ -578,7 +580,7 @@ class ViewController: UIViewController {
     
     // MARK: - API fetch method
     private func fetchIntentToken(completion: @escaping (Result<String, Error>) -> Void) {
-        guard let url = URL(string: "https://api.getpassage.ai/intent-token") else {
+        guard let url = URL(string: "http://localhost:3000/intent-token") else {
             completion(.failure(NSError(domain: "InvalidURL", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
             return
         }

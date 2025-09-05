@@ -15,6 +15,19 @@ struct PendingUserActionCommand {
     let timestamp: Date
 }
 
+// Custom WKWebView that can prevent becoming first responder
+class PassageWKWebView: WKWebView {
+    var shouldPreventFirstResponder: Bool = false
+    
+    override var canBecomeFirstResponder: Bool {
+        return shouldPreventFirstResponder ? false : super.canBecomeFirstResponder
+    }
+    
+    override func becomeFirstResponder() -> Bool {
+        return shouldPreventFirstResponder ? false : super.becomeFirstResponder()
+    }
+}
+
 class WebViewModalViewController: UIViewController, UIAdaptivePresentationControllerDelegate {
     weak var delegate: WebViewModalDelegate?
     
@@ -34,12 +47,13 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     // Dual webviews - created once and reused across sessions
     // These are never destroyed during the SDK lifecycle unless releaseResources() is called
-    private var uiWebView: WKWebView!
-    private var automationWebView: WKWebView!
+    private var uiWebView: PassageWKWebView!
+    private var automationWebView: PassageWKWebView!
     
     private var currentURL: String = ""
     private var isShowingUIWebView: Bool = true
     private var isAnimating: Bool = false
+    
     
     // Store pending user action command
     private var pendingUserActionCommand: PendingUserActionCommand?
@@ -176,6 +190,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         navigationTimeoutTimer?.invalidate()
         navigationTimeoutTimer = nil
         
+        
         // Remove notification observers to prevent duplicate notifications
         NotificationCenter.default.removeObserver(self)
         passageLogger.info("[WEBVIEW] Removed all notification observers")
@@ -185,7 +200,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         passageLogger.info("[WEBVIEW] ========== DEINIT ==========")
         passageLogger.info("[WEBVIEW] View controller instance being deallocated: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
         
-        // Clean up timer
+        // Clean up timers
         navigationTimeoutTimer?.invalidate()
         navigationTimeoutTimer = nil
         
@@ -259,6 +274,21 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             self,
             selector: #selector(collectPageDataNotification(_:)),
             name: .collectPageData,
+            object: nil
+        )
+        
+        // Observe keyboard notifications to prevent keyboard from showing when automation webview has focus
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardWillShow(_:)),
+            name: UIResponder.keyboardWillShowNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardDidShow(_:)),
+            name: UIResponder.keyboardDidShowNotification,
             object: nil
         )
     }
@@ -461,7 +491,39 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         }
     }
     
-    private func createWebView(webViewType: String) -> WKWebView {
+    // MARK: - Keyboard Management
+    
+    @objc private func keyboardWillShow(_ notification: Notification) {
+        // If UI webview is visible, immediately dismiss the keyboard since it must be from the hidden automation webview
+        guard isShowingUIWebView else {
+            passageLogger.debug("[KEYBOARD] Automation webview is visible, allowing keyboard")
+            return
+        }
+        
+        passageLogger.info("[KEYBOARD] Keyboard will show while UI webview is visible - dismissing immediately")
+        
+        // Immediately dismiss keyboard since UI webview is visible
+        DispatchQueue.main.async { [weak self] in
+            self?.view.endEditing(true)
+        }
+    }
+    
+    @objc private func keyboardDidShow(_ notification: Notification) {
+        // If UI webview is visible, immediately dismiss the keyboard
+        guard isShowingUIWebView else {
+            passageLogger.debug("[KEYBOARD] Automation webview is visible, keyboard allowed")
+            return
+        }
+        
+        passageLogger.info("[KEYBOARD] Keyboard did show while UI webview is visible - dismissing immediately")
+        
+        // Immediately dismiss keyboard
+        DispatchQueue.main.async { [weak self] in
+            self?.view.endEditing(true)
+        }
+    }
+    
+    private func createWebView(webViewType: String) -> PassageWKWebView {
         passageLogger.info("[WEBVIEW] ========== CREATING WEBVIEW ==========")
         passageLogger.info("[WEBVIEW] WebView type: \(webViewType)")
         passageLogger.info("[WEBVIEW] Force simple webview: \(forceSimpleWebView)")
@@ -624,7 +686,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         }
         
         // Create web view
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let webView = PassageWKWebView(frame: .zero, configuration: configuration)
         
         // Set user agent based on webview type and configuration
         if webViewType == PassageConstants.WebViewTypes.automation && automationUserAgent != nil {
@@ -664,6 +726,13 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         
         // Tag webviews for identification
         webView.tag = webViewType == PassageConstants.WebViewTypes.automation ? 2 : 1
+        
+        // Detect and store the WebView user agent for remote control configuration
+        // This ensures the backend receives the actual WebKit user agent instead of CFNetwork
+        if let remoteControl = remoteControl {
+            // Detect user agent immediately when WebView is created
+            remoteControl.detectWebViewUserAgent(from: webView)
+        }
         
         return webView
     }
@@ -804,6 +873,11 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         uiWebView.alpha = 1
         automationWebView.alpha = 0
         view.bringSubviewToFront(uiWebView)
+        
+        // Set initial first responder behavior - prevent automation webview from becoming first responder initially
+        automationWebView.shouldPreventFirstResponder = true
+        uiWebView.shouldPreventFirstResponder = false
+        
     }
     
     private func generateGlobalJavaScript() -> String {
@@ -986,6 +1060,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                     console.error('[Passage] Error posting message:', error);
                   }
                 },
+                
                 
                 // Navigation functionality
                 navigate: function(url) {
@@ -1509,6 +1584,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             passageLogger.debug("[WEBVIEW] Switching to UI webview")
             self.isAnimating = true
             self.view.bringSubviewToFront(uiWebView)
+            
+            // Prevent automation webview from becoming first responder when UI is visible
+            automationWebView.shouldPreventFirstResponder = true
+            uiWebView.shouldPreventFirstResponder = false
 
             UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseInOut, .allowUserInteraction], animations: {
                 uiWebView.alpha = 1
@@ -1517,6 +1596,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 self.isAnimating = false
                 self.isShowingUIWebView = true
                 self.onWebviewChange?("ui")
+                
+                // Any keyboard that might be showing will be automatically dismissed by keyboard notifications
             })
         }
     }
@@ -1574,6 +1655,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             passageLogger.debug("[WEBVIEW] Switching to automation webview")
             self.isAnimating = true
             self.view.bringSubviewToFront(automationWebView)
+            
+            // Allow automation webview to become first responder when it's visible
+            automationWebView.shouldPreventFirstResponder = false
+            uiWebView.shouldPreventFirstResponder = true
 
             UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseInOut, .allowUserInteraction], animations: {
                 automationWebView.alpha = 1

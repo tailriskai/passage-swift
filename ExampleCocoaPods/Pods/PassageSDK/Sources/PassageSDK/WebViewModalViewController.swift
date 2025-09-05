@@ -1047,7 +1047,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                     passageLogger.debug("[WEBVIEW] window.passage is ready, injecting script")
                     
                     // First, test if window.passage.postMessage works
-                    automationWebView.evaluateJavaScript("window.passage.postMessage('test-message-from-swift')") { testResult, testError in
+                    automationWebView.evaluateJavaScript("window.passage.postMessage('passage-ready')") { testResult, testError in
                         if let testError = testError {
                             passageLogger.error("[WEBVIEW] Test postMessage failed: \(testError)")
                         } else {

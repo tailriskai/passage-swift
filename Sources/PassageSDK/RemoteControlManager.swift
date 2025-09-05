@@ -86,6 +86,9 @@ class RemoteControlManager {
     private var screenshotAccessors: ScreenshotAccessors?
     private var captureImageFunction: CaptureImageFunction?
     
+    // WebView user agent detection
+    private var detectedWebViewUserAgent: String?
+    
     // Screenshot accessor protocols (matching React Native)
     typealias ScreenshotAccessors = (
         getCurrentScreenshot: () -> String?,
@@ -335,6 +338,89 @@ class RemoteControlManager {
         self.onConfigurationUpdated = callback
     }
     
+    /// Detect and store the actual WebView user agent
+    /// This should be called when WebViews are created to capture the real WebKit user agent
+    func detectWebViewUserAgent(from webView: WKWebView) {
+        webView.evaluateJavaScript("navigator.userAgent") { [weak self] result, error in
+            if let userAgent = result as? String, !userAgent.isEmpty {
+                passageLogger.info("[REMOTE CONTROL] Detected WebView user agent: \(userAgent)")
+                let previousUserAgent = self?.detectedWebViewUserAgent
+                self?.detectedWebViewUserAgent = userAgent
+                
+                // If this is the first time we detected a user agent and we haven't fetched config yet,
+                // or if the user agent changed significantly, refetch configuration
+                if previousUserAgent == nil || (previousUserAgent != userAgent && !userAgent.contains("CFNetwork")) {
+                    passageLogger.info("[REMOTE CONTROL] User agent detected/updated, will use for future requests")
+                }
+            } else if let error = error {
+                passageLogger.error("[REMOTE CONTROL] Failed to detect WebView user agent: \(error)")
+            } else {
+                passageLogger.warn("[REMOTE CONTROL] WebView user agent detection returned empty result")
+            }
+        }
+    }
+    
+    /// Try to detect WebView user agent before making configuration request
+    /// This creates a temporary WebView if needed to get the user agent
+    private func detectWebViewUserAgentIfNeeded(completion: @escaping () -> Void) {
+        // If we already have a detected user agent, proceed immediately
+        if detectedWebViewUserAgent != nil {
+            passageLogger.debug("[REMOTE CONTROL] WebView user agent already detected, proceeding")
+            completion()
+            return
+        }
+        
+        passageLogger.info("[REMOTE CONTROL] Creating temporary WebView to detect user agent")
+        
+        DispatchQueue.main.async { [weak self] in
+            // Create a temporary WebView to detect the user agent
+            let config = WKWebViewConfiguration()
+            let tempWebView = WKWebView(frame: .zero, configuration: config)
+            
+            // Add the webview to a temporary container to ensure it's properly initialized
+            let tempContainer = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+            tempContainer.addSubview(tempWebView)
+            tempWebView.frame = tempContainer.bounds
+            
+            // Detect user agent with timeout
+            var completed = false
+            
+            // Give the WebView a moment to initialize before running JavaScript
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                tempWebView.evaluateJavaScript("navigator.userAgent") { result, error in
+                    guard !completed else { return }
+                    completed = true
+                    
+                    // Clean up temporary container
+                    tempWebView.removeFromSuperview()
+                    
+                    if let userAgent = result as? String, !userAgent.isEmpty {
+                        passageLogger.info("[REMOTE CONTROL] Detected WebView user agent from temp WebView: \(userAgent)")
+                        self?.detectedWebViewUserAgent = userAgent
+                    } else if let error = error {
+                        passageLogger.error("[REMOTE CONTROL] Failed to detect WebView user agent from temp WebView: \(error)")
+                    } else {
+                        passageLogger.warn("[REMOTE CONTROL] Temp WebView user agent detection returned empty result")
+                    }
+                    
+                    completion()
+                }
+            }
+            
+            // Fallback timeout in case the JavaScript doesn't execute
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                guard !completed else { return }
+                completed = true
+                passageLogger.warn("[REMOTE CONTROL] WebView user agent detection timed out, proceeding without it")
+                
+                // Clean up temporary container if still needed
+                tempWebView.removeFromSuperview()
+                
+                completion()
+            }
+        }
+    }
+    
     // MARK: - Global JavaScript Access
     
     /// Get the global JavaScript that should be injected into automation webview on every navigation
@@ -372,9 +458,13 @@ class RemoteControlManager {
         // Fetch configuration first
         passageLogger.info("[REMOTE CONTROL] Fetching configuration from server...")
         passageAnalytics.trackConfigurationRequest(url: "\(config.socketUrl)\(PassageConstants.Paths.automationConfig)")
-        fetchConfiguration { [weak self] in
-            passageLogger.info("[REMOTE CONTROL] Configuration fetch completed, proceeding to socket connection")
-            self?.connectSocket()
+        
+        // Try to detect WebView user agent first, but don't block if it fails
+        detectWebViewUserAgentIfNeeded { [weak self] in
+            self?.fetchConfiguration { [weak self] in
+                passageLogger.info("[REMOTE CONTROL] Configuration fetch completed, proceeding to socket connection")
+                self?.connectSocket()
+            }
         }
     }
     
@@ -391,6 +481,15 @@ class RemoteControlManager {
         let url = URL(string: urlString)!
         var request = URLRequest(url: url)
         request.addValue(intentToken, forHTTPHeaderField: "x-intent-token")
+        
+        // Add the detected WebView user agent as a custom header if available
+        // This allows the backend to distinguish between URLSession user agent and WebView user agent
+        if let webViewUserAgent = detectedWebViewUserAgent {
+            request.setValue(webViewUserAgent, forHTTPHeaderField: "x-webview-user-agent")
+            passageLogger.info("[REMOTE CONTROL] Sending detected WebView user agent in custom header")
+        } else {
+            passageLogger.warn("[REMOTE CONTROL] No WebView user agent detected, backend will use default")
+        }
         
         passageLogger.debug("[REMOTE CONTROL] Request headers: \(request.allHTTPHeaderFields ?? [:])")
         
@@ -1636,6 +1735,7 @@ class RemoteControlManager {
         currentWebViewType = PassageConstants.WebViewTypes.ui
         connectionData = nil
         connectionId = nil
+        detectedWebViewUserAgent = nil
         
         onSuccess = nil
         onError = nil
