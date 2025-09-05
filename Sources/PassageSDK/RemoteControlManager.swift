@@ -603,7 +603,10 @@ class RemoteControlManager {
             .log(config.debug),  // Use unified debug flag from PassageConfig
             .compress,
             .path("/socket.io/"),  // Standard Socket.IO path
-            .connectParams(["intentToken": intentToken ?? ""]),
+            .connectParams([
+                "intentToken": intentToken ?? "",
+                "agentName": config.agentName
+            ]),
             .forceWebsockets(true),
             .forceNew(true),
             .reconnects(true),
