@@ -239,9 +239,10 @@ class RemoteControlManager {
         
         passageLogger.debug("[REMOTE CONTROL] Sending browser state for \(webViewType): \(passageLogger.truncateUrl(url, maxLength: 100))")
         
-        // TODO: Implement browser state sending like React Native implementation
-        // For now, just log that we received the notification
-        // This would typically collect page data and send it to the backend
+        // Send browser state to backend
+        Task {
+            await sendBrowserStateToBackend(url: url, webViewType: webViewType)
+        }
     }
     
     // MARK: - App State Handling
@@ -280,6 +281,64 @@ class RemoteControlManager {
         ]
         
         socket.emit("appStateUpdate", appStateData)
+    }
+    
+    // MARK: - Browser State Management
+    
+    private func sendBrowserStateToBackend(url: String, webViewType: String) async {
+        guard let intentToken = intentToken else {
+            passageLogger.error("[REMOTE CONTROL] No intent token available for sending browser state")
+            return
+        }
+        
+        passageLogger.info("[REMOTE CONTROL] Sending browser state to backend - URL: \(passageLogger.truncateUrl(url, maxLength: 100)), webViewType: \(webViewType)")
+        
+        let urlString = "\(config.socketUrl)/automation/browser-state"
+        guard let apiUrl = URL(string: urlString) else {
+            passageLogger.error("[REMOTE CONTROL] Invalid URL: \(urlString)")
+            return
+        }
+        
+        var request = URLRequest(url: apiUrl)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue(intentToken, forHTTPHeaderField: "x-intent-token")
+        
+        // Create browser state payload matching BrowserStateRequestDto
+        let browserState: [String: Any] = [
+            "url": url
+            // Note: We're only sending URL for now. In the future, we could collect:
+            // - html: document.documentElement.outerHTML
+            // - localStorage: collected from webview
+            // - sessionStorage: collected from webview
+            // - cookies: collected from WKWebsiteDataStore
+            // - screenshot: captured from webview
+        ]
+        
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: browserState)
+            request.httpBody = jsonData
+            
+            passageLogger.debug("[REMOTE CONTROL] Sending browser state POST request...")
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                    passageLogger.info("[REMOTE CONTROL] ✅ Browser state sent successfully - Status: \(httpResponse.statusCode)")
+                    if let responseData = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        passageLogger.debug("[REMOTE CONTROL] Response: \(responseData)")
+                    }
+                } else {
+                    passageLogger.error("[REMOTE CONTROL] ❌ Browser state request failed - Status: \(httpResponse.statusCode)")
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        passageLogger.error("[REMOTE CONTROL] Response: \(responseString)")
+                    }
+                }
+            }
+        } catch {
+            passageLogger.error("[REMOTE CONTROL] ❌ Failed to send browser state: \(error)")
+        }
     }
     
     deinit {
