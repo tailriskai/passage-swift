@@ -56,6 +56,16 @@ struct StorageItem: Codable {
     let value: String
 }
 
+struct SuccessUrl: Codable {
+    let urlPattern: String
+    let navigationType: String
+    
+    enum NavigationType: String {
+        case navigationStart = "navigationStart"
+        case navigationEnd = "navigationEnd"
+    }
+}
+
 // AnyCodable is defined in PassageAnalytics.swift
 
 // MARK: - RemoteControlManager
@@ -81,6 +91,9 @@ class RemoteControlManager {
     private var currentCommand: RemoteCommand?
     private var lastWaitCommand: RemoteCommand? // Track wait commands for reinjection
     private var onConfigurationUpdated: ((_ userAgent: String, _ integrationUrl: String?) -> Void)?
+    
+    // Success URLs for navigation commands
+    private var currentSuccessUrls: [SuccessUrl] = []
     
     // Screenshot and record mode support
     private var screenshotAccessors: ScreenshotAccessors?
@@ -393,6 +406,81 @@ class RemoteControlManager {
         return base64
     }
     
+    // MARK: - Success URL Matching
+    
+    /// Check if the given URL matches any success URL for the specified navigation type
+    private func checkSuccessUrlMatch(_ url: String, navigationType: SuccessUrl.NavigationType) -> Bool {
+        guard !currentSuccessUrls.isEmpty else { return false }
+        
+        for successUrl in currentSuccessUrls {
+            guard successUrl.navigationType == navigationType.rawValue else { continue }
+            
+            if urlMatches(url, pattern: successUrl.urlPattern) {
+                passageLogger.info("[SUCCESS URL] 🎯 Match found for \(navigationType.rawValue): \(passageLogger.truncateUrl(url, maxLength: 100)) matches \(passageLogger.truncateUrl(successUrl.urlPattern, maxLength: 100))")
+                return true
+            }
+        }
+        
+        return false
+    }
+    
+    /// Check if a URL matches a pattern (supports exact match and basic wildcard matching)
+    private func urlMatches(_ url: String, pattern: String) -> Bool {
+        // Exact match
+        if url == pattern {
+            return true
+        }
+        
+        // Basic wildcard support - if pattern contains *, treat it as a prefix match
+        if pattern.contains("*") {
+            let prefixPattern = pattern.replacingOccurrences(of: "*", with: "")
+            return url.hasPrefix(prefixPattern)
+        }
+        
+        // Check if URL starts with the pattern (for domain-level matching)
+        if url.hasPrefix(pattern) {
+            return true
+        }
+        
+        // Extract domain from both URLs for domain matching
+        guard let urlComponents = URLComponents(string: url),
+              let patternComponents = URLComponents(string: pattern),
+              let urlHost = urlComponents.host,
+              let patternHost = patternComponents.host else {
+            return false
+        }
+        
+        // Domain match
+        return urlHost == patternHost
+    }
+    
+    /// Trigger webview switch to UI when success URL is matched
+    private func handleSuccessUrlMatch(_ url: String, navigationType: SuccessUrl.NavigationType) {
+        passageLogger.info("[SUCCESS URL] ✅ Switching to UI webview due to success URL match")
+        passageLogger.debug("[SUCCESS URL] Matched URL: \(passageLogger.truncateUrl(url, maxLength: 100)) (\(navigationType.rawValue))")
+        
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .showUIWebView, object: nil)
+        }
+        currentWebViewType = PassageConstants.WebViewTypes.ui
+    }
+    
+    // MARK: - Public Success URL Methods
+    
+    /// Check for success URL match on navigation start (called from WebViewModalViewController)
+    func checkNavigationStart(_ url: String) {
+        if checkSuccessUrlMatch(url, navigationType: .navigationStart) {
+            handleSuccessUrlMatch(url, navigationType: .navigationStart)
+        }
+    }
+    
+    /// Check for success URL match on navigation end (called from WebViewModalViewController)
+    func checkNavigationEnd(_ url: String) {
+        if checkSuccessUrlMatch(url, navigationType: .navigationEnd) {
+            handleSuccessUrlMatch(url, navigationType: .navigationEnd)
+        }
+    }
+    
     func setConfigurationCallback(_ callback: ((_ userAgent: String, _ integrationUrl: String?) -> Void)?) {
         self.onConfigurationUpdated = callback
     }
@@ -505,6 +593,10 @@ class RemoteControlManager {
         self.onError = onError
         self.onDataComplete = onDataComplete
         self.onPromptComplete = onPromptComplete
+        
+        // Reset success URLs for new session
+        currentSuccessUrls = []
+        passageLogger.debug("[REMOTE CONTROL] Reset success URLs for new session")
         
         passageLogger.info("[REMOTE CONTROL] ========== STARTING CONNECTION ==========")
         passageLogger.info("[REMOTE CONTROL] Intent token length: \(intentToken.count)")
@@ -1033,6 +1125,26 @@ class RemoteControlManager {
         guard let url = command.args?["url"] as? String else {
             sendError(commandId: command.id, error: "No URL provided")
             return
+        }
+        
+        // Parse and store successUrls (override any existing ones)
+        if let successUrlsData = command.args?["successUrls"] as? [[String: Any]] {
+            currentSuccessUrls = successUrlsData.compactMap { urlData in
+                guard let urlPattern = urlData["urlPattern"] as? String,
+                      let navigationType = urlData["navigationType"] as? String else {
+                    return nil
+                }
+                return SuccessUrl(urlPattern: urlPattern, navigationType: navigationType)
+            }
+            
+            passageLogger.info("[COMMAND HANDLER] Stored \(currentSuccessUrls.count) success URLs:")
+            for successUrl in currentSuccessUrls {
+                passageLogger.debug("[COMMAND HANDLER]   - \(successUrl.navigationType): \(passageLogger.truncateUrl(successUrl.urlPattern, maxLength: 100))")
+            }
+        } else {
+            // Clear success URLs if not provided in this command
+            currentSuccessUrls = []
+            passageLogger.debug("[COMMAND HANDLER] No success URLs provided, cleared existing ones")
         }
         
         passageLogger.info("[COMMAND HANDLER] Navigating to URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
@@ -1798,6 +1910,10 @@ class RemoteControlManager {
         connectionData = nil
         connectionId = nil
         detectedWebViewUserAgent = nil
+        
+        // Reset success URLs on disconnect
+        currentSuccessUrls = []
+        passageLogger.debug("[REMOTE CONTROL] Reset success URLs on disconnect")
         
         onSuccess = nil
         onError = nil

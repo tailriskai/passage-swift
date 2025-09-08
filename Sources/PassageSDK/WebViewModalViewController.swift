@@ -2143,11 +2143,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     private func handleNavigationStateChange(url: String, loading: Bool, webViewType: String) {
         passageLogger.debug("[NAVIGATION] State change - \(webViewType): \(passageLogger.truncateUrl(url, maxLength: 100)), loading: \(loading)")
         
-        // Send browser state update to backend and handle screenshots/reinjection when loading is complete
+        // Send browser state update to backend and handle screenshots/reinjection
         if !url.isEmpty {
-            // Only capture screenshot and reinject when loading is false (page fully loaded)
-            if !loading {
-                // Handle injectScript command reinjection for record mode
+            if loading {
+                // Send browser state on navigation start
                 if webViewType == PassageConstants.WebViewTypes.automation {
                     // Send browser state to remote control (matches React Native implementation)
                     NotificationCenter.default.post(
@@ -2156,6 +2155,11 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                         userInfo: ["url": url, "webViewType": webViewType]
                     )
                     
+                    passageLogger.debug("[NAVIGATION] Page starting to load for \(webViewType), sent browser state")
+                }
+            } else {
+                // Handle injectScript command reinjection for record mode when loading is complete
+                if webViewType == PassageConstants.WebViewTypes.automation {
                     // Call handleNavigationComplete directly (matches React Native implementation)
                     remoteControl?.handleNavigationComplete(url)
                     
@@ -2318,6 +2322,11 @@ extension WebViewModalViewController: WKNavigationDelegate {
         if let url = webView.url {
             passageLogger.info("[NAVIGATION] 🚀 \(webViewType) loading: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
             
+            // Check for success URL match on navigation start (only for automation webview)
+            if webViewType == PassageConstants.WebViewTypes.automation {
+                remoteControl?.checkNavigationStart(url.absoluteString)
+            }
+            
             // Handle navigation state change (like React Native implementation)
             handleNavigationStateChange(url: url.absoluteString, loading: true, webViewType: webViewType)
             passageAnalytics.trackNavigationStart(url: url.absoluteString, webViewType: webViewType)
@@ -2355,6 +2364,11 @@ extension WebViewModalViewController: WKNavigationDelegate {
         
         if let url = webView.url {
             passageLogger.info("[NAVIGATION] ✅ \(webViewType) loaded: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
+            
+            // Check for success URL match on navigation end (only for automation webview)
+            if webViewType == PassageConstants.WebViewTypes.automation {
+                remoteControl?.checkNavigationEnd(url.absoluteString)
+            }
             
             // Send delegate callback for both webviews
             delegate?.webViewModal(didNavigateTo: url)
