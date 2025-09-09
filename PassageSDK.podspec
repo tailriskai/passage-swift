@@ -1,6 +1,6 @@
 Pod::Spec.new do |spec|
   spec.name         = "PassageSDK"
-  spec.version      = "0.0.33"
+  spec.version      = "0.0.34"
   spec.summary      = "Passage SDK for iOS"
   spec.description  = <<-DESC
     The everywhere API
@@ -10,6 +10,8 @@ Pod::Spec.new do |spec|
   spec.homepage     = "https://github.com/tailriskai/passage-swift"
   spec.license      = { :type => "MIT", :file => "LICENSE" }
   spec.author       = { "Passage" => "developers@tailrisk.ai" }
+  spec.readme       = "https://raw.githubusercontent.com/tailriskai/passage-swift/refs/heads/main/README.md"
+
   
   spec.swift_version = "5.10"
   
