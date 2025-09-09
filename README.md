@@ -6,7 +6,7 @@ Native iOS SDK for integrating Passage authentication and data capture into your
 
 For installation instructions, complete integration guides, API reference, and examples, visit:
 
-**📚 [https://docs.getpassage.ai/docs/swift](https://docs.getpassage.ai/docs/swift)**
+**📚 [https://docs.getpassage.ai/docs/swift/integration](https://docs.getpassage.ai/docs/swift/integration)**
 
 ## Support
 
