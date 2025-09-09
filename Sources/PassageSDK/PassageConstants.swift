@@ -42,7 +42,6 @@ public enum PassageConstants {
     // WebView message handler names
     public enum MessageHandlers {
         static let passageWebView = "passageWebView"
-        static let capacitorWebViewModal = "capacitorWebViewModal"
     }
     
     // WebView identifiers
@@ -69,7 +68,6 @@ public enum PassageConstants {
     
     // URL schemes for local content validation
     public enum URLSchemes {
-        static let capacitor = "capacitor://"
         static let httpLocalhost = "http://localhost"
         static let httpLocal = "http://192.168"
     }

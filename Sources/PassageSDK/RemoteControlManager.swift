@@ -244,17 +244,27 @@ class RemoteControlManager {
     }
     
     @objc private func handleSendBrowserState(_ notification: Notification) {
-        guard let url = notification.userInfo?["url"] as? String,
-              let webViewType = notification.userInfo?["webViewType"] as? String else {
+        guard let url = notification.userInfo?["url"] as? String else {
             passageLogger.error("[REMOTE CONTROL] Browser state notification missing required data")
             return
         }
         
-        passageLogger.debug("[REMOTE CONTROL] Sending browser state for \(webViewType): \(passageLogger.truncateUrl(url, maxLength: 100))")
+        // Extract additional browser state data (matching React Native WebView pattern)
+        // Convert from [AnyHashable: Any] to [String: Any]
+        var browserStateData: [String: Any] = [:]
+        if let userInfo = notification.userInfo {
+            for (key, value) in userInfo {
+                if let stringKey = key as? String {
+                    browserStateData[stringKey] = value
+                }
+            }
+        }
+        
+        passageLogger.debug("[REMOTE CONTROL] Sending browser state: \(passageLogger.truncateUrl(url, maxLength: 100))")
         
         // Send browser state to backend
         Task {
-            await sendBrowserStateToBackend(url: url, webViewType: webViewType)
+            await sendBrowserStateToBackend(browserStateData: browserStateData)
         }
     }
     
@@ -298,13 +308,18 @@ class RemoteControlManager {
     
     // MARK: - Browser State Management
     
-    private func sendBrowserStateToBackend(url: String, webViewType: String) async {
+    private func sendBrowserStateToBackend(browserStateData: [String: Any]) async {
         guard let intentToken = intentToken else {
             passageLogger.error("[REMOTE CONTROL] No intent token available for sending browser state")
             return
         }
         
-        passageLogger.info("[REMOTE CONTROL] Sending browser state to backend - URL: \(passageLogger.truncateUrl(url, maxLength: 100)), webViewType: \(webViewType)")
+        guard let url = browserStateData["url"] as? String else {
+            passageLogger.error("[REMOTE CONTROL] Browser state data missing required URL field")
+            return
+        }
+        
+        passageLogger.info("[REMOTE CONTROL] Sending browser state to backend - URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
         
         let urlString = "\(config.socketUrl)/automation/browser-state"
         guard let apiUrl = URL(string: urlString) else {
@@ -317,12 +332,12 @@ class RemoteControlManager {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(intentToken, forHTTPHeaderField: "x-intent-token")
         
-        // Create browser state payload matching BrowserStateRequestDto
+        // Create browser state payload - only include fields defined in BrowserStateRequestDto
         let browserState: [String: Any] = [
             "url": url
-            // Note: We're only sending URL for now. In the future, we could collect:
+            // Optional fields that can be added when available:
             // - html: document.documentElement.outerHTML
-            // - localStorage: collected from webview
+            // - localStorage: collected from webview  
             // - sessionStorage: collected from webview
             // - cookies: collected from WKWebsiteDataStore
             // - screenshot: captured from webview
@@ -1388,8 +1403,8 @@ class RemoteControlManager {
                 };
                 
                 // Send via webkit message handler
-                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
-                    window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                    window.webkit.messageHandlers.passageWebView.postMessage({
                         type: 'pageData',
                         data: result,
                         webViewType: 'automation',
@@ -1400,8 +1415,8 @@ class RemoteControlManager {
                 }
             } catch (error) {
                 console.error('[PageData] Error collecting page data:', error);
-                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
-                    window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                    window.webkit.messageHandlers.passageWebView.postMessage({
                         type: 'pageData',
                         error: error.toString(),
                         webViewType: 'automation',

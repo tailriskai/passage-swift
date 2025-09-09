@@ -34,7 +34,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     var modalTitle: String = ""
     var titleText: String = ""
     var showGrabber: Bool = false
-    // Optional initial URL (parity with Capacitor). If set, loads on viewDidLoad.
+    // Optional initial URL. If set, loads on viewDidLoad.
     var url: String = ""
     
     // Callback closures
@@ -70,7 +70,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     // Debug: force rendering just one webview with a predefined URL
     private let debugSingleWebViewUrl: String? = nil
-    // Temporary: force a simple, Capacitor-like single webview configuration
+        // Force a simple single webview configuration
     private let forceSimpleWebView: Bool = false
     
     // Navigation timeout timer
@@ -117,7 +117,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             return
         }
 
-        // Parity with Capacitor: if `url` was set, load it immediately
+        // If `url` was set, load it immediately
         if !url.isEmpty {
             passageLogger.info("[WEBVIEW] Loading provided URL immediately: \(passageLogger.truncateUrl(url, maxLength: 100))")
             loadURL(url)
@@ -203,6 +203,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         // Clean up timers
         navigationTimeoutTimer?.invalidate()
         navigationTimeoutTimer = nil
+        
+        // Remove KVO observers
+        uiWebView?.removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
+        automationWebView?.removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
         
         // Remove notification observers
         NotificationCenter.default.removeObserver(self)
@@ -523,6 +527,41 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         }
     }
     
+    // MARK: - KVO for URL Changes
+    
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+        guard keyPath == #keyPath(WKWebView.url) else {
+            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+            return
+        }
+        
+        guard let webView = object as? WKWebView else { return }
+        
+        let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
+        
+        // Get old and new URLs
+        let oldURL = (change?[.oldKey] as? URL)?.absoluteString
+        let newURL = (change?[.newKey] as? URL)?.absoluteString
+        
+        // Only process if URL actually changed
+        if let newURL = newURL, newURL != oldURL {
+            passageLogger.info("[KVO] URL changed in \(webViewType): \(passageLogger.truncateUrl(newURL, maxLength: 100))")
+            
+            // Handle the URL change (captures client-side navigation like pushState)
+            handleNavigationStateChange(url: newURL, loading: webView.isLoading, webViewType: webViewType)
+            
+            // For automation webview, check for success URL match
+            if webViewType == PassageConstants.WebViewTypes.automation {
+                remoteControl?.checkNavigationEnd(newURL)
+            }
+            
+            // Send delegate callback
+            if let url = URL(string: newURL) {
+                delegate?.webViewModal(didNavigateTo: url)
+            }
+        }
+    }
+    
     private func createWebView(webViewType: String) -> PassageWKWebView {
         passageLogger.info("[WEBVIEW] ========== CREATING WEBVIEW ==========")
         passageLogger.info("[WEBVIEW] WebView type: \(webViewType)")
@@ -548,15 +587,15 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         configuration.allowsInlineMediaPlayback = true
         passageLogger.debug("[WEBVIEW] Inline media playback allowed: true")
         
-        // Keep config minimal (match Capacitor behavior for https loads)
+        // Keep config minimal for https loads
         
         // Set up messaging — in simple mode, skip all scripts/handlers to avoid CSP/conflicts
         if !forceSimpleWebView && debugSingleWebViewUrl == nil {
             passageLogger.info("[WEBVIEW] Setting up message handlers and scripts")
             let userContentController = WKUserContentController()
             
-            // Add message handler for modal communication (using Capacitor-style handler name)
-            userContentController.add(self, name: PassageConstants.MessageHandlers.capacitorWebViewModal)
+            // Add message handler for modal communication
+            userContentController.add(self, name: PassageConstants.MessageHandlers.passageWebView)
             
             // Inject window.passage script immediately on webview creation
             let passageScript = createPassageScript(for: webViewType)
@@ -722,20 +761,23 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             #endif
         }
         
-        // Use default user agent (match Capacitor)
+        // Use default user agent
         
-        // Tag webviews for identification
-        webView.tag = webViewType == PassageConstants.WebViewTypes.automation ? 2 : 1
-        
-        // Detect and store the WebView user agent for remote control configuration
-        // This ensures the backend receives the actual WebKit user agent instead of CFNetwork
-        if let remoteControl = remoteControl {
-            // Detect user agent immediately when WebView is created
-            remoteControl.detectWebViewUserAgent(from: webView)
-        }
-        
-        return webView
+    // Tag webviews for identification
+    webView.tag = webViewType == PassageConstants.WebViewTypes.automation ? 2 : 1
+    
+    // Add observer for URL changes to catch all navigation events
+    webView.addObserver(self, forKeyPath: #keyPath(WKWebView.url), options: [.new, .old], context: nil)
+    
+    // Detect and store the WebView user agent for remote control configuration
+    // This ensures the backend receives the actual WebKit user agent instead of CFNetwork
+    if let remoteControl = remoteControl {
+        // Detect user agent immediately when WebView is created
+        remoteControl.detectWebViewUserAgent(from: webView)
     }
+    
+    return webView
+}
     
     private func setupWebViews() {
         passageLogger.info("[WEBVIEW] ========== SETUP WEBVIEWS ==========")
@@ -1019,7 +1061,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     private func createPassageScript(for webViewType: String) -> String {
         if webViewType == PassageConstants.WebViewTypes.automation {
-            // Full script for automation webview (matches Capacitor implementation)
+            // Full script for automation webview
             return """
             // Passage Automation WebView Script
             (function() {
@@ -1041,9 +1083,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 postMessage: function(data) {
                   console.log('[Passage] postMessage called with data:', data);
                   try {
-                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       console.log('[Passage] Sending message via webkit handler');
-                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                      window.webkit.messageHandlers.passageWebView.postMessage({
                         type: 'message',
                         data: data,
                         webViewType: 'automation',
@@ -1054,7 +1096,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                       console.warn('[Passage] Message handlers not available');
                       console.log('[Passage] window.webkit:', typeof window.webkit);
                       console.log('[Passage] window.webkit.messageHandlers:', typeof window.webkit?.messageHandlers);
-                      console.log('[Passage] capacitorWebViewModal handler:', typeof window.webkit?.messageHandlers?.capacitorWebViewModal);
+                      console.log('[Passage] passageWebView handler:', typeof window.webkit?.messageHandlers?.passageWebView);
                     }
                   } catch (error) {
                     console.error('[Passage] Error posting message:', error);
@@ -1065,8 +1107,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 // Navigation functionality
                 navigate: function(url) {
                   try {
-                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
-                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
                         type: 'navigate',
                         url: url,
                         webViewType: 'automation',
@@ -1083,8 +1125,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 // Modal control
                 close: function() {
                   try {
-                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
-                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
                         type: 'close',
                         webViewType: 'automation',
                         timestamp: Date.now()
@@ -1100,8 +1142,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 // Title management
                 setTitle: function(title) {
                   try {
-                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
-                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
                         type: 'setTitle',
                         title: title,
                         webViewType: 'automation',
@@ -1129,13 +1171,70 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 }
               };
               
+              // Monitor client-side navigation events
+              (function() {
+                // Monitor History API
+                const originalPushState = window.history.pushState;
+                const originalReplaceState = window.history.replaceState;
+                
+                window.history.pushState = function() {
+                  originalPushState.apply(window.history, arguments);
+                  console.log('[Passage] pushState navigation to:', window.location.href);
+                  window.webkit.messageHandlers.passageWebView.postMessage({
+                    type: 'clientNavigation',
+                    navigationMethod: 'pushState',
+                    url: window.location.href,
+                    webViewType: 'automation',
+                    timestamp: Date.now()
+                  });
+                };
+                
+                window.history.replaceState = function() {
+                  originalReplaceState.apply(window.history, arguments);
+                  console.log('[Passage] replaceState navigation to:', window.location.href);
+                  window.webkit.messageHandlers.passageWebView.postMessage({
+                    type: 'clientNavigation',
+                    navigationMethod: 'replaceState',
+                    url: window.location.href,
+                    webViewType: 'automation',
+                    timestamp: Date.now()
+                  });
+                };
+                
+                // Monitor popstate (back/forward)
+                window.addEventListener('popstate', function(event) {
+                  console.log('[Passage] popstate navigation to:', window.location.href);
+                  window.webkit.messageHandlers.passageWebView.postMessage({
+                    type: 'clientNavigation',
+                    navigationMethod: 'popstate',
+                    url: window.location.href,
+                    webViewType: 'automation',
+                    timestamp: Date.now()
+                  });
+                });
+                
+                // Monitor hash changes
+                window.addEventListener('hashchange', function(event) {
+                  console.log('[Passage] hashchange navigation to:', window.location.href);
+                  window.webkit.messageHandlers.passageWebView.postMessage({
+                    type: 'clientNavigation',
+                    navigationMethod: 'hashchange',
+                    url: window.location.href,
+                    oldURL: event.oldURL,
+                    newURL: event.newURL,
+                    webViewType: 'automation',
+                    timestamp: Date.now()
+                  });
+                });
+              })();
+              
               console.log('[Passage] Automation webview script initialized successfully');
               console.log('[Passage] window.passage.initialized:', window.passage.initialized);
               console.log('[Passage] window.passage.webViewType:', window.passage.webViewType);
             })();
             """
         } else {
-            // Full script for UI webview (matches Capacitor implementation)
+            // Full script for UI webview
             return """
             // Passage UI WebView Script - Full window.passage object
             (function() {
@@ -1153,8 +1252,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 // Core messaging functionality
                 postMessage: function(data) {
                   try {
-                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
-                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
                         type: 'message',
                         data: data,
                         webViewType: 'ui',
@@ -1171,8 +1270,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 // Navigation functionality
                 navigate: function(url) {
                   try {
-                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
-                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
                         type: 'navigate',
                         url: url,
                         webViewType: 'ui',
@@ -1189,8 +1288,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 // Modal control
                 close: function() {
                   try {
-                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
-                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
                         type: 'close',
                         webViewType: 'ui',
                         timestamp: Date.now()
@@ -1206,8 +1305,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 // Title management
                 setTitle: function(title) {
                   try {
-                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.capacitorWebViewModal) {
-                      window.webkit.messageHandlers.capacitorWebViewModal.postMessage({
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
                         type: 'setTitle',
                         title: title,
                         webViewType: 'ui',
@@ -1234,6 +1333,63 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                   return true;
                 }
               };
+              
+              // Monitor client-side navigation events (same as automation)
+              (function() {
+                // Monitor History API
+                const originalPushState = window.history.pushState;
+                const originalReplaceState = window.history.replaceState;
+                
+                window.history.pushState = function() {
+                  originalPushState.apply(window.history, arguments);
+                  console.log('[Passage] pushState navigation to:', window.location.href);
+                  window.webkit.messageHandlers.passageWebView.postMessage({
+                    type: 'clientNavigation',
+                    navigationMethod: 'pushState',
+                    url: window.location.href,
+                    webViewType: 'ui',
+                    timestamp: Date.now()
+                  });
+                };
+                
+                window.history.replaceState = function() {
+                  originalReplaceState.apply(window.history, arguments);
+                  console.log('[Passage] replaceState navigation to:', window.location.href);
+                  window.webkit.messageHandlers.passageWebView.postMessage({
+                    type: 'clientNavigation',
+                    navigationMethod: 'replaceState',
+                    url: window.location.href,
+                    webViewType: 'ui',
+                    timestamp: Date.now()
+                  });
+                };
+                
+                // Monitor popstate (back/forward)
+                window.addEventListener('popstate', function(event) {
+                  console.log('[Passage] popstate navigation to:', window.location.href);
+                  window.webkit.messageHandlers.passageWebView.postMessage({
+                    type: 'clientNavigation',
+                    navigationMethod: 'popstate',
+                    url: window.location.href,
+                    webViewType: 'ui',
+                    timestamp: Date.now()
+                  });
+                });
+                
+                // Monitor hash changes
+                window.addEventListener('hashchange', function(event) {
+                  console.log('[Passage] hashchange navigation to:', window.location.href);
+                  window.webkit.messageHandlers.passageWebView.postMessage({
+                    type: 'clientNavigation',
+                    navigationMethod: 'hashchange',
+                    url: window.location.href,
+                    oldURL: event.oldURL,
+                    newURL: event.newURL,
+                    webViewType: 'ui',
+                    timestamp: Date.now()
+                  });
+                });
+              })();
               
               console.log('[Passage] UI webview script initialized with full window.passage object');
             })();
@@ -1743,6 +1899,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         self.automationWebView?.removeFromSuperview()
         passageLogger.debug("[WEBVIEW] WebViews removed from view hierarchy")
 
+        // Remove KVO observers before clearing references
+        self.uiWebView?.removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
+        self.automationWebView?.removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
+        
         // Clear navigation delegates to break retain cycles
         self.uiWebView?.navigationDelegate = nil
         self.uiWebView?.uiDelegate = nil
@@ -2143,28 +2303,29 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     private func handleNavigationStateChange(url: String, loading: Bool, webViewType: String) {
         passageLogger.debug("[NAVIGATION] State change - \(webViewType): \(passageLogger.truncateUrl(url, maxLength: 100)), loading: \(loading)")
         
-        // Send browser state update to backend and handle screenshots/reinjection
-        if !url.isEmpty {
+        // Only send browser state for automation webview
+        if webViewType == PassageConstants.WebViewTypes.automation && !url.isEmpty {
             if loading {
-                // Send browser state on navigation start
-                if webViewType == PassageConstants.WebViewTypes.automation {
-                    // Send browser state to remote control (matches React Native implementation)
-                    NotificationCenter.default.post(
-                        name: .sendBrowserState,
-                        object: nil,
-                        userInfo: ["url": url, "webViewType": webViewType]
-                    )
-                    
-                    passageLogger.debug("[NAVIGATION] Page starting to load for \(webViewType), sent browser state")
-                }
+                // Send browser state on navigation start - only include fields defined in BrowserStateRequestDto
+                let browserStateData: [String: Any] = [
+                    "url": url
+                    // Only url is sent - other fields (html, localStorage, sessionStorage, cookies, screenshot) 
+                    // are captured separately when needed
+                ]
+                
+                NotificationCenter.default.post(
+                    name: .sendBrowserState,
+                    object: nil,
+                    userInfo: browserStateData
+                )
+                
+                passageLogger.debug("[NAVIGATION] Page starting to load for automation webview, sent browser state")
             } else {
                 // Handle injectScript command reinjection for record mode when loading is complete
-                if webViewType == PassageConstants.WebViewTypes.automation {
-                    // Call handleNavigationComplete directly (matches React Native implementation)
-                    remoteControl?.handleNavigationComplete(url)
-                    
-                    passageLogger.debug("[NAVIGATION] Page loaded for \(webViewType), checking for reinjection")
-                }
+                // Call handleNavigationComplete directly (matches React Native implementation)
+                remoteControl?.handleNavigationComplete(url)
+                
+                passageLogger.debug("[NAVIGATION] Page loaded for automation webview, checking for reinjection")
             }
         }
     }
@@ -2388,8 +2549,11 @@ extension WebViewModalViewController: WKNavigationDelegate {
         
         let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
         passageLogger.webView("Navigation failed: \(error.localizedDescription)", webViewType: webViewType)
-        if let url = webView.url?.absoluteString {
-            passageAnalytics.trackNavigationError(url: url, webViewType: webViewType, error: error.localizedDescription)
+        
+        if let url = webView.url {
+            // Handle navigation state change for failed navigation
+            handleNavigationStateChange(url: url.absoluteString, loading: false, webViewType: webViewType)
+            passageAnalytics.trackNavigationError(url: url.absoluteString, webViewType: webViewType, error: error.localizedDescription)
         }
     }
     
@@ -2405,13 +2569,49 @@ extension WebViewModalViewController: WKNavigationDelegate {
         passageLogger.warn("Navigation failed but continuing: \(error.localizedDescription)")
         passageLogger.debug("Error domain: \(nsError.domain), code: \(nsError.code)")
         
-        // Track error for analytics
+        // Handle navigation state change for failed provisional navigation
         if let url = webView.url?.absoluteString ?? nsError.userInfo["NSErrorFailingURLStringKey"] as? String {
+            handleNavigationStateChange(url: url, loading: false, webViewType: webViewType)
             passageAnalytics.trackNavigationError(url: url, webViewType: webViewType, error: error.localizedDescription)
         }
         
         // Let the webview show whatever it can (error page, cached content, etc.)
         // Don't retry or stop navigation - just let it be
+    }
+    
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
+        
+        if let url = webView.url {
+            passageLogger.info("[NAVIGATION] 📍 \(webViewType) committed: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
+            
+            // Handle navigation state change when navigation is committed (URL bar updates)
+            handleNavigationStateChange(url: url.absoluteString, loading: true, webViewType: webViewType)
+            
+            // Check for success URL match on commit (for automation webview)
+            if webViewType == PassageConstants.WebViewTypes.automation {
+                remoteControl?.checkNavigationStart(url.absoluteString)
+            }
+        }
+    }
+    
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
+        
+        if let url = webView.url {
+            passageLogger.info("[NAVIGATION] 🔄 \(webViewType) redirected: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
+            
+            // Handle server redirects
+            handleNavigationStateChange(url: url.absoluteString, loading: true, webViewType: webViewType)
+            
+            // Check for success URL match on redirect (for automation webview)
+            if webViewType == PassageConstants.WebViewTypes.automation {
+                remoteControl?.checkNavigationStart(url.absoluteString)
+            }
+            
+            // Track analytics for redirect
+            passageAnalytics.trackNavigationStart(url: url.absoluteString, webViewType: webViewType)
+        }
     }
     
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -2462,7 +2662,7 @@ extension WebViewModalViewController: WKNavigationDelegate {
 // MARK: - WKScriptMessageHandler
 extension WebViewModalViewController: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        if message.name == PassageConstants.MessageHandlers.capacitorWebViewModal {
+        if message.name == PassageConstants.MessageHandlers.passageWebView {
             if let body = message.body as? [String: Any] {
                 let type = body["type"] as? String ?? PassageConstants.MessageTypes.message
                 let webViewType = body["webViewType"] as? String ?? "unknown"
@@ -2524,8 +2724,30 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                     }
                 case "unhandled_rejection":
                     passageLogger.error("Unhandled Promise Rejection: \(body["message"] ?? "Unknown rejection")")
+                case "clientNavigation":
+                    // Handle client-side navigation events (pushState, replaceState, hash changes)
+                    if let url = body["url"] as? String,
+                       let navigationMethod = body["navigationMethod"] as? String {
+                        passageLogger.info("[CLIENT NAV] \(webViewType) - \(navigationMethod): \(passageLogger.truncateUrl(url, maxLength: 100))")
+                        
+                        // Handle the navigation state change
+                        handleNavigationStateChange(url: url, loading: false, webViewType: webViewType)
+                        
+                        // For automation webview, check for success URL match
+                        if webViewType == PassageConstants.WebViewTypes.automation {
+                            remoteControl?.checkNavigationEnd(url)
+                        }
+                        
+                        // Send delegate callback
+                        if let urlObj = URL(string: url) {
+                            delegate?.webViewModal(didNavigateTo: urlObj)
+                        }
+                        
+                        // Track analytics
+                        passageAnalytics.trackNavigationSuccess(url: url, webViewType: webViewType, duration: nil)
+                    }
                 case PassageConstants.MessageTypes.message:
-                    // Handle window.passage.postMessage calls (matches Capacitor implementation)
+                    // Handle window.passage.postMessage calls
                     if let data = body["data"] {
                         if let dataString = data as? String,
                            let jsonData = dataString.data(using: .utf8),
