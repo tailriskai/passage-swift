@@ -86,6 +86,7 @@ class RemoteControlManager {
     private var globalJavascript: String = ""
     private var automationUserAgent: String = ""
     private var integrationUrl: String?
+    private var configImageOptimization: [String: Any]? = nil
     private var currentWebViewType: String = PassageConstants.WebViewTypes.ui
     private var lastUserActionCommand: RemoteCommand?
     private var currentCommand: RemoteCommand?
@@ -98,6 +99,10 @@ class RemoteControlManager {
     // Screenshot and record mode support
     private var screenshotAccessors: ScreenshotAccessors?
     private var captureImageFunction: CaptureImageFunction?
+    
+    // Screenshot interval capture support
+    private var screenshotTimer: Timer?
+    private var screenshotInterval: TimeInterval?
     
     // WebView user agent detection
     private var detectedWebViewUserAgent: String?
@@ -244,8 +249,11 @@ class RemoteControlManager {
     }
     
     @objc private func handleSendBrowserState(_ notification: Notification) {
+        passageLogger.info("[SEND BROWSER STATE] ========== HANDLE SEND BROWSER STATE ==========")
+        
         guard let url = notification.userInfo?["url"] as? String else {
-            passageLogger.error("[REMOTE CONTROL] Browser state notification missing required data")
+            passageLogger.error("[SEND BROWSER STATE] ❌ Browser state notification missing required URL")
+            passageLogger.error("[SEND BROWSER STATE] Available userInfo keys: \(notification.userInfo?.keys.sorted { "\($0)" < "\($1)" } ?? [])")
             return
         }
         
@@ -260,7 +268,30 @@ class RemoteControlManager {
             }
         }
         
-        passageLogger.debug("[REMOTE CONTROL] Sending browser state: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.info("[SEND BROWSER STATE] URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.info("[SEND BROWSER STATE] Browser state data keys: \(browserStateData.keys.sorted())")
+        
+        // Log screenshot information
+        if let screenshot = browserStateData["screenshot"] as? String {
+            passageLogger.info("[SEND BROWSER STATE] ✅ Screenshot included: \(screenshot.count) chars")
+        } else if browserStateData["screenshot"] != nil {
+            passageLogger.warn("[SEND BROWSER STATE] ⚠️ Screenshot field present but not String: \(type(of: browserStateData["screenshot"]!))")
+        } else {
+            passageLogger.warn("[SEND BROWSER STATE] ⚠️ No screenshot in browser state data")
+        }
+        
+        // Log other fields
+        if let trigger = browserStateData["trigger"] as? String {
+            passageLogger.debug("[SEND BROWSER STATE] Trigger: \(trigger)")
+        }
+        
+        if let interval = browserStateData["interval"] as? TimeInterval {
+            passageLogger.debug("[SEND BROWSER STATE] Interval: \(interval)")
+        }
+        
+        if let imageOpt = browserStateData["imageOptimization"] as? [String: Any] {
+            passageLogger.debug("[SEND BROWSER STATE] Image optimization: \(imageOpt)")
+        }
         
         // Send browser state to backend
         Task {
@@ -309,21 +340,26 @@ class RemoteControlManager {
     // MARK: - Browser State Management
     
     private func sendBrowserStateToBackend(browserStateData: [String: Any]) async {
+        passageLogger.info("[BROWSER STATE] ========== SENDING BROWSER STATE TO BACKEND ==========")
+        
         guard let intentToken = intentToken else {
-            passageLogger.error("[REMOTE CONTROL] No intent token available for sending browser state")
+            passageLogger.error("[BROWSER STATE] ❌ No intent token available for sending browser state")
             return
         }
         
         guard let url = browserStateData["url"] as? String else {
-            passageLogger.error("[REMOTE CONTROL] Browser state data missing required URL field")
+            passageLogger.error("[BROWSER STATE] ❌ Browser state data missing required URL field")
+            passageLogger.error("[BROWSER STATE] Available fields: \(browserStateData.keys.sorted())")
             return
         }
         
-        passageLogger.info("[REMOTE CONTROL] Sending browser state to backend - URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.info("[BROWSER STATE] URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
         
         let urlString = "\(config.socketUrl)/automation/browser-state"
+        passageLogger.info("[BROWSER STATE] Endpoint: \(urlString)")
+        
         guard let apiUrl = URL(string: urlString) else {
-            passageLogger.error("[REMOTE CONTROL] Invalid URL: \(urlString)")
+            passageLogger.error("[BROWSER STATE] ❌ Invalid URL: \(urlString)")
             return
         }
         
@@ -333,7 +369,7 @@ class RemoteControlManager {
         request.addValue(intentToken, forHTTPHeaderField: "x-intent-token")
         
         // Create browser state payload - only include fields defined in BrowserStateRequestDto
-        let browserState: [String: Any] = [
+        var browserState: [String: Any] = [
             "url": url
             // Optional fields that can be added when available:
             // - html: document.documentElement.outerHTML
@@ -343,29 +379,62 @@ class RemoteControlManager {
             // - screenshot: captured from webview
         ]
         
+        // Add screenshot if provided
+        if let screenshot = browserStateData["screenshot"] as? String, !screenshot.isEmpty {
+            browserState["screenshot"] = screenshot
+            passageLogger.info("[BROWSER STATE] ✅ Including screenshot in browser state (\(screenshot.count) chars)")
+        } else {
+            passageLogger.warn("[BROWSER STATE] ⚠️ No screenshot included in browser state")
+            if let screenshot = browserStateData["screenshot"] {
+                passageLogger.debug("[BROWSER STATE] Screenshot field present but: \(type(of: screenshot)) = \(screenshot)")
+            } else {
+                passageLogger.debug("[BROWSER STATE] No screenshot field in browserStateData")
+            }
+        }
+        
+        // Log metadata for debugging but don't include in request
+        // (These fields are not defined in BrowserStateRequestDto)
+        if let imageOptimization = browserStateData["imageOptimization"] as? [String: Any] {
+            passageLogger.debug("[BROWSER STATE] Image optimization parameters available: \(imageOptimization) (not sent to server)")
+        }
+        
+        if let trigger = browserStateData["trigger"] as? String {
+            passageLogger.debug("[BROWSER STATE] Trigger: \(trigger) (not sent to server)")
+        }
+        
+        if let interval = browserStateData["interval"] as? TimeInterval {
+            passageLogger.debug("[BROWSER STATE] Capture interval: \(interval) (not sent to server)")
+        }
+        
+        // Log final payload summary
+        passageLogger.info("[BROWSER STATE] Final payload fields: \(browserState.keys.sorted())")
+        let hasScreenshot = browserState["screenshot"] != nil
+        passageLogger.info("[BROWSER STATE] Contains screenshot: \(hasScreenshot)")
+        
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: browserState)
             request.httpBody = jsonData
             
-            passageLogger.debug("[REMOTE CONTROL] Sending browser state POST request...")
+            passageLogger.info("[BROWSER STATE] 🚀 Sending browser state POST request...")
+            passageLogger.debug("[BROWSER STATE] Request size: \(jsonData.count) bytes")
             
             let (data, response) = try await URLSession.shared.data(for: request)
             
             if let httpResponse = response as? HTTPURLResponse {
                 if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
-                    passageLogger.info("[REMOTE CONTROL] ✅ Browser state sent successfully - Status: \(httpResponse.statusCode)")
+                    passageLogger.info("[BROWSER STATE] ✅ Browser state sent successfully - Status: \(httpResponse.statusCode)")
                     if let responseData = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        passageLogger.debug("[REMOTE CONTROL] Response: \(responseData)")
+                        passageLogger.debug("[BROWSER STATE] Response: \(responseData)")
                     }
                 } else {
-                    passageLogger.error("[REMOTE CONTROL] ❌ Browser state request failed - Status: \(httpResponse.statusCode)")
+                    passageLogger.error("[BROWSER STATE] ❌ Browser state request failed - Status: \(httpResponse.statusCode)")
                     if let responseString = String(data: data, encoding: .utf8) {
-                        passageLogger.error("[REMOTE CONTROL] Response: \(responseString)")
+                        passageLogger.error("[BROWSER STATE] Response: \(responseString)")
                     }
                 }
             }
         } catch {
-            passageLogger.error("[REMOTE CONTROL] ❌ Failed to send browser state: \(error)")
+            passageLogger.error("[BROWSER STATE] ❌ Failed to send browser state: \(error)")
         }
     }
     
@@ -394,22 +463,273 @@ class RemoteControlManager {
     
     private func extractRecordFlag(from token: String) -> Bool {
         // Extract record flag from JWT token (matching React Native implementation)
+        passageLogger.debug("[JWT DECODE] Extracting record flag from token")
         let components = token.components(separatedBy: ".")
-        guard components.count == 3 else { return false }
+        guard components.count == 3 else { 
+            passageLogger.error("[JWT DECODE] Invalid JWT format - expected 3 components, got \(components.count)")
+            return false 
+        }
         
         let payload = components[1]
-        guard let data = Data(base64Encoded: addPadding(to: payload)) else { return false }
+        passageLogger.debug("[JWT DECODE] JWT payload (raw): \(payload)")
+        let paddedPayload = addPadding(to: payload)
+        passageLogger.debug("[JWT DECODE] JWT payload (padded): \(paddedPayload)")
+        
+        guard let data = Data(base64Encoded: paddedPayload) else { 
+            passageLogger.error("[JWT DECODE] Failed to decode base64 payload")
+            return false 
+        }
         
         do {
-            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let record = json["record"] as? Bool {
-                return record
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                passageLogger.info("[JWT DECODE] ✅ Successfully decoded JWT payload: \(json)")
+                if let record = json["record"] as? Bool {
+                    passageLogger.info("[JWT DECODE] Found record flag: \(record)")
+                    return record
+                } else {
+                    passageLogger.warn("[JWT DECODE] No 'record' field found in JWT payload")
+                }
             }
         } catch {
-            passageLogger.debug("[REMOTE CONTROL] Failed to decode record flag from intent token: \(error)")
+            passageLogger.error("[JWT DECODE] Failed to decode record flag from intent token: \(error)")
         }
         
         return false
+    }
+    
+    func getCaptureScreenshotFlag() -> Bool {
+        guard let intentToken = intentToken else { return false }
+        return extractCaptureScreenshotFlag(from: intentToken)
+    }
+    
+    func getCaptureScreenshotInterval() -> TimeInterval? {
+        guard let intentToken = intentToken else { return nil }
+        return extractCaptureScreenshotInterval(from: intentToken)
+    }
+    
+    func getImageOptimizationParameters() -> [String: Any]? {
+        // Use configuration parameters instead of JWT parameters
+        return configImageOptimization
+    }
+    
+    private func extractCaptureScreenshotFlag(from token: String) -> Bool {
+        passageLogger.debug("[JWT DECODE] Extracting captureScreenshot flag from token")
+        let components = token.components(separatedBy: ".")
+        guard components.count == 3 else { 
+            passageLogger.error("[JWT DECODE] Invalid JWT format for captureScreenshot - expected 3 components, got \(components.count)")
+            return false 
+        }
+        
+        let payload = components[1]
+        guard let data = Data(base64Encoded: addPadding(to: payload)) else { 
+            passageLogger.error("[JWT DECODE] Failed to decode base64 payload for captureScreenshot")
+            return false 
+        }
+        
+        do {
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if let captureScreenshot = json["captureScreenshot"] as? Bool {
+                    passageLogger.info("[JWT DECODE] ✅ Found captureScreenshot flag: \(captureScreenshot)")
+                    return captureScreenshot
+                } else {
+                    passageLogger.warn("[JWT DECODE] No 'captureScreenshot' field found in JWT payload")
+                    passageLogger.debug("[JWT DECODE] Available fields: \(json.keys.sorted())")
+                }
+            }
+        } catch {
+            passageLogger.error("[JWT DECODE] Failed to decode captureScreenshot flag from intent token: \(error)")
+        }
+        
+        return false
+    }
+    
+    private func extractCaptureScreenshotInterval(from token: String) -> TimeInterval? {
+        passageLogger.debug("[JWT DECODE] Extracting captureScreenshotInterval from token")
+        let components = token.components(separatedBy: ".")
+        guard components.count == 3 else { 
+            passageLogger.error("[JWT DECODE] Invalid JWT format for interval - expected 3 components, got \(components.count)")
+            return nil 
+        }
+        
+        let payload = components[1]
+        guard let data = Data(base64Encoded: addPadding(to: payload)) else { 
+            passageLogger.error("[JWT DECODE] Failed to decode base64 payload for interval")
+            return nil 
+        }
+        
+        do {
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                // Support both number (seconds) and string formats
+                if let intervalSeconds = json["captureScreenshotInterval"] as? Double {
+                    passageLogger.info("[JWT DECODE] ✅ Found captureScreenshotInterval (Double): \(intervalSeconds)")
+                    return intervalSeconds
+                } else if let intervalInt = json["captureScreenshotInterval"] as? Int {
+                    passageLogger.info("[JWT DECODE] ✅ Found captureScreenshotInterval (Int): \(intervalInt)")
+                    return Double(intervalInt)
+                } else if let intervalString = json["captureScreenshotInterval"] as? String,
+                          let intervalSeconds = Double(intervalString) {
+                    passageLogger.info("[JWT DECODE] ✅ Found captureScreenshotInterval (String): \(intervalString) -> \(intervalSeconds)")
+                    return intervalSeconds
+                } else {
+                    passageLogger.warn("[JWT DECODE] No 'captureScreenshotInterval' field found in JWT payload")
+                    if let intervalValue = json["captureScreenshotInterval"] {
+                        passageLogger.warn("[JWT DECODE] captureScreenshotInterval has unexpected type: \(type(of: intervalValue)) = \(intervalValue)")
+                    }
+                }
+            }
+        } catch {
+            passageLogger.error("[JWT DECODE] Failed to decode captureScreenshotInterval from intent token: \(error)")
+        }
+        
+        return nil
+    }
+    
+    // Note: extractImageOptimizationParameters removed - now using configuration instead of JWT
+    
+    // MARK: - Screenshot Capture Methods
+    
+    /// Start interval-based screenshot capture if JWT flags are enabled
+    private func startScreenshotCapture() {
+        passageLogger.info("[SCREENSHOT TIMER] ========== STARTING SCREENSHOT CAPTURE ==========")
+        
+        // Stop any existing timer
+        stopScreenshotCapture()
+        
+        // Check if capture is enabled and get interval
+        let captureFlag = getCaptureScreenshotFlag()
+        passageLogger.info("[SCREENSHOT TIMER] Capture screenshot flag: \(captureFlag)")
+        
+        guard captureFlag else {
+            passageLogger.warn("[SCREENSHOT TIMER] ❌ Screenshot capture disabled by JWT flag - no timer will be created")
+            return
+        }
+        
+        let interval = getCaptureScreenshotInterval()
+        passageLogger.info("[SCREENSHOT TIMER] Screenshot interval from JWT: \(interval?.description ?? "nil")")
+        
+        guard let interval = interval, interval > 0 else {
+            passageLogger.error("[SCREENSHOT TIMER] ❌ No valid screenshot interval found in JWT - no timer will be created")
+            return
+        }
+        
+        screenshotInterval = interval
+        passageLogger.info("[SCREENSHOT TIMER] ✅ Starting screenshot capture with \(interval)s interval")
+        
+        // Ensure we're on the main thread for timer creation
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { 
+                passageLogger.error("[SCREENSHOT TIMER] ❌ Self is nil when creating timer")
+                return 
+            }
+            
+            // Create timer for periodic screenshots
+            self.screenshotTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] timer in
+                passageLogger.info("[SCREENSHOT TIMER] 📸 Timer fired - capturing screenshot at \(Date())")
+                Task {
+                    await self?.captureScreenshotAndSendToBrowserState()
+                }
+            }
+            
+            // Add timer to run loop to ensure it fires
+            if let timer = self.screenshotTimer {
+                RunLoop.main.add(timer, forMode: .common)
+                passageLogger.info("[SCREENSHOT TIMER] ✅ Screenshot timer created and added to run loop")
+                
+                // Fire immediately to test
+                passageLogger.info("[SCREENSHOT TIMER] 🔥 Firing timer immediately for testing")
+                Task {
+                    await self.captureScreenshotAndSendToBrowserState()
+                }
+            } else {
+                passageLogger.error("[SCREENSHOT TIMER] ❌ Failed to create screenshot timer")
+            }
+        }
+    }
+    
+    /// Stop interval-based screenshot capture
+    private func stopScreenshotCapture() {
+        if screenshotTimer != nil {
+            passageLogger.info("[SCREENSHOT TIMER] 🛑 Stopping screenshot capture timer")
+            passageLogger.info("[SCREENSHOT TIMER] Call stack: \(Thread.callStackSymbols.prefix(5).joined(separator: "\n"))")
+            screenshotTimer?.invalidate()
+            screenshotTimer = nil
+        } else {
+            passageLogger.debug("[SCREENSHOT TIMER] No screenshot timer to stop")
+        }
+        screenshotInterval = nil
+        passageLogger.debug("[SCREENSHOT TIMER] Screenshot capture timer stopped")
+    }
+    
+    /// Manually capture screenshot and send to browser state endpoint
+    func captureScreenshotManually() async {
+        await captureScreenshotAndSendToBrowserState()
+    }
+    
+    /// Capture screenshot and send to browser state endpoint
+    /// Uses WKWebView.takeSnapshot for proper WebView content capture
+    private func captureScreenshotAndSendToBrowserState() async {
+        passageLogger.info("[SCREENSHOT CAPTURE] ========== CAPTURING SCREENSHOT FOR BROWSER STATE ==========")
+        passageLogger.info("[SCREENSHOT CAPTURE] Called from timer - timestamp: \(Date())")
+        passageLogger.info("[SCREENSHOT CAPTURE] Method: WKWebView.takeSnapshot (proper WebView content capture)")
+        
+        guard let intentToken = intentToken else {
+            passageLogger.error("[SCREENSHOT CAPTURE] ❌ No intent token available for screenshot capture")
+            return
+        }
+        
+        passageLogger.info("[SCREENSHOT CAPTURE] Intent token available, proceeding with capture")
+        
+        // Always capture a fresh screenshot for periodic updates (don't use cached)
+        var screenshotData: String?
+        passageLogger.debug("[SCREENSHOT CAPTURE] Capturing fresh screenshot for periodic update...")
+        
+        if let captureImageFunction = captureImageFunction {
+            // Always capture new screenshot for timer-based captures
+            passageLogger.info("[SCREENSHOT CAPTURE] 📸 Capturing fresh screenshot using WKWebView.takeSnapshot...")
+            screenshotData = await captureImageFunction()
+            if let screenshot = screenshotData {
+                passageLogger.info("[SCREENSHOT CAPTURE] ✅ WKWebView.takeSnapshot captured fresh screenshot: \(screenshot.count) chars")
+            } else {
+                passageLogger.error("[SCREENSHOT CAPTURE] ❌ WKWebView.takeSnapshot failed to capture screenshot")
+            }
+        } else {
+            // Fallback to cached screenshot if capture function not available
+            passageLogger.warn("[SCREENSHOT CAPTURE] ⚠️ No capture function available, trying cached screenshot...")
+            if let currentScreenshot = screenshotAccessors?.getCurrentScreenshot() {
+                screenshotData = currentScreenshot
+                passageLogger.info("[SCREENSHOT CAPTURE] ✅ Using cached screenshot as fallback (\(currentScreenshot.count) chars)")
+            } else {
+                passageLogger.error("[SCREENSHOT CAPTURE] ❌ No screenshot capture method available")
+                passageLogger.error("[SCREENSHOT CAPTURE] screenshotAccessors: \(screenshotAccessors != nil)")
+                passageLogger.error("[SCREENSHOT CAPTURE] captureImageFunction: \(captureImageFunction != nil)")
+            }
+        }
+        
+        // Get image optimization parameters
+        let imageOptParams = getImageOptimizationParameters()
+        passageLogger.info("[SCREENSHOT CAPTURE] Image optimization params: \(imageOptParams?.description ?? "nil")")
+        
+        // Get current page URL from automation webview and send browser state
+        passageLogger.info("[SCREENSHOT CAPTURE] Getting current URL from automation webview...")
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            // First try to get current URL from automation webview
+            DispatchQueue.main.async {
+                passageLogger.debug("[SCREENSHOT CAPTURE] Posting getCurrentUrlForBrowserState notification")
+                NotificationCenter.default.post(
+                    name: .getCurrentUrlForBrowserState,
+                    object: nil,
+                    userInfo: [
+                        "screenshot": screenshotData as Any,
+                        "trigger": "screenshot_capture",
+                        "interval": self.screenshotInterval as Any,
+                        "imageOptimization": imageOptParams as Any,
+                        "continuation": continuation as Any
+                    ]
+                )
+            }
+        }
+        
+        passageLogger.info("[SCREENSHOT CAPTURE] Screenshot capture and browser state send completed")
     }
     
     // Helper method to add padding to base64 string
@@ -618,7 +938,17 @@ class RemoteControlManager {
         passageLogger.debug("[REMOTE CONTROL] Intent token preview: \(passageLogger.truncateData(intentToken, maxLength: 50))")
         passageLogger.info("[REMOTE CONTROL] Socket URL: \(config.socketUrl)")
         passageLogger.info("[REMOTE CONTROL] Socket Namespace: \(config.socketNamespace)")
-        passageLogger.info("[REMOTE CONTROL] Record mode: \(getRecordFlag() ? "ENABLED (screenshots will be captured)" : "DISABLED (no screenshots)")")
+        
+        // Debug JWT token parsing
+        passageLogger.info("[REMOTE CONTROL] ========== JWT TOKEN ANALYSIS ==========")
+        passageLogger.info("[REMOTE CONTROL] Record mode: \(getRecordFlag() ? "ENABLED (full recording mode)" : "DISABLED (no full recording)")")
+        passageLogger.info("[REMOTE CONTROL] Capture screenshot flag: \(getCaptureScreenshotFlag() ? "ENABLED (screenshots will be captured)" : "DISABLED (no screenshots)")")
+        if let interval = getCaptureScreenshotInterval() {
+            passageLogger.info("[REMOTE CONTROL] Screenshot interval: \(interval) seconds")
+        } else {
+            passageLogger.info("[REMOTE CONTROL] Screenshot interval: NOT SET")
+        }
+        passageLogger.info("[REMOTE CONTROL] Image optimization: Will be loaded from configuration (not JWT)")
         passageLogger.info("[REMOTE CONTROL] Page data collection: ENABLED (HTML, localStorage, sessionStorage, cookies)")
         
         // Fetch configuration first
@@ -630,6 +960,9 @@ class RemoteControlManager {
             self?.fetchConfiguration { [weak self] in
                 passageLogger.info("[REMOTE CONTROL] Configuration fetch completed, proceeding to socket connection")
                 self?.connectSocket()
+                
+                // Start screenshot capture if enabled
+                self?.startScreenshotCapture()
             }
         }
     }
@@ -717,6 +1050,9 @@ class RemoteControlManager {
                         self?.automationUserAgent = json["automationUserAgent"] as? String ?? ""
                         self?.integrationUrl = (json["integration"] as? [String: Any])?["url"] as? String
                         
+                        // Extract imageOptimization parameters from configuration
+                        self?.configImageOptimization = json["imageOptimization"] as? [String: Any]
+                        
                         passageLogger.info("[REMOTE CONTROL] Configuration parsed successfully")
                         passageLogger.debug("[REMOTE CONTROL] Cookie domains: \(self?.cookieDomains ?? [])")
                         passageLogger.debug("[REMOTE CONTROL] Global JS length: \(self?.globalJavascript.count ?? 0)")
@@ -730,6 +1066,10 @@ class RemoteControlManager {
                         passageLogger.debug("[REMOTE CONTROL] Automation user agent: \(userAgentInfo)")
                         passageLogger.debug("[REMOTE CONTROL] Integration URL: \(self?.integrationUrl ?? "none")")
                         passageLogger.info("[REMOTE CONTROL] Cookie domains configured: \(self?.cookieDomains.count ?? 0) domains")
+                        passageLogger.info("[REMOTE CONTROL] Image optimization from config: \(self?.configImageOptimization != nil ? "✅ SET" : "❌ NOT SET")")
+                        if let imageOpt = self?.configImageOptimization {
+                            passageLogger.debug("[REMOTE CONTROL] Config image optimization: \(imageOpt)")
+                        }
                         
                         // Notify about configuration update (matches React Native implementation)
                         if let self = self, let callback = self.onConfigurationUpdated {
@@ -1577,33 +1917,37 @@ class RemoteControlManager {
     }
     
     private func collectScreenshot(completion: @escaping (String?) -> Void) {
-        // Only include screenshot if record flag is true (matching React Native implementation)
-        let includeScreenshot = getRecordFlag()
+        // Only include screenshot if captureScreenshot flag is true (separate from record flag)
+        let includeScreenshot = getCaptureScreenshotFlag()
         
         guard includeScreenshot else {
-            passageLogger.debug("[REMOTE CONTROL] Screenshot collection skipped - record flag is false")
+            passageLogger.debug("[REMOTE CONTROL] Screenshot collection skipped - captureScreenshot flag is false")
             completion(nil)
             return
         }
         
-        passageLogger.debug("[REMOTE CONTROL] Collecting screenshot for record mode")
+        passageLogger.debug("[REMOTE CONTROL] Collecting screenshot for captureScreenshot mode using WKWebView.takeSnapshot")
         
         // Try to get current screenshot from accessors first
         if let currentScreenshot = screenshotAccessors?.getCurrentScreenshot() {
-            passageLogger.debug("[REMOTE CONTROL] Using current screenshot from accessors")
+            passageLogger.debug("[REMOTE CONTROL] Using current screenshot from accessors (WKWebView.takeSnapshot)")
             completion(currentScreenshot)
             return
         }
         
-        // If no current screenshot available, try to capture a new one
+        // If no current screenshot available, try to capture a new one using WKWebView.takeSnapshot
         if let captureImageFunction = captureImageFunction {
             Task {
                 let screenshot = await captureImageFunction()
-                passageLogger.debug("[REMOTE CONTROL] New screenshot captured: \(screenshot != nil ? "\(screenshot!.count) chars" : "nil")")
+                if let screenshot = screenshot {
+                    passageLogger.debug("[REMOTE CONTROL] WKWebView.takeSnapshot captured new screenshot: \(screenshot.count) chars")
+                } else {
+                    passageLogger.debug("[REMOTE CONTROL] WKWebView.takeSnapshot failed to capture screenshot")
+                }
                 completion(screenshot)
             }
         } else {
-            passageLogger.debug("[REMOTE CONTROL] No screenshot capture function available")
+            passageLogger.debug("[REMOTE CONTROL] No WKWebView.takeSnapshot capture function available")
             completion(nil)
         }
     }
@@ -1620,8 +1964,9 @@ class RemoteControlManager {
         
         // Log page data status (matching React Native's truncated logging approach)
         if let pageData = result.pageData {
-            let recordModeInfo = getRecordFlag() ? " (record mode)" : " (non-record mode)"
-            passageLogger.info("[REMOTE CONTROL] ✅ Sending result WITH page data\(recordModeInfo): {")
+            let captureInfo = getCaptureScreenshotFlag() ? " (screenshot capture enabled)" : " (screenshot capture disabled)"
+            let recordInfo = getRecordFlag() ? " (record mode)" : " (non-record mode)"
+            passageLogger.info("[REMOTE CONTROL] ✅ Sending result WITH page data\(captureInfo)\(recordInfo): {")
             passageLogger.info("[REMOTE CONTROL]   cookies: \(pageData.cookies?.count ?? 0) items")
             passageLogger.info("[REMOTE CONTROL]   localStorage: \(pageData.localStorage?.count ?? 0) items")
             passageLogger.info("[REMOTE CONTROL]   sessionStorage: \(pageData.sessionStorage?.count ?? 0) items")
@@ -1917,6 +2262,9 @@ class RemoteControlManager {
         socket = nil
         manager = nil
         
+        // Stop screenshot capture
+        stopScreenshotCapture()
+        
         isConnected = false
         intentToken = nil
         lastUserActionCommand = nil
@@ -1925,6 +2273,7 @@ class RemoteControlManager {
         connectionData = nil
         connectionId = nil
         detectedWebViewUserAgent = nil
+        configImageOptimization = nil
         
         // Reset success URLs on disconnect
         currentSuccessUrls = []
@@ -1950,6 +2299,7 @@ extension Notification.Name {
     static let getPageData = Notification.Name("PassageGetPageData")
     static let collectPageData = Notification.Name("PassageCollectPageData")
     static let sendBrowserState = Notification.Name("PassageSendBrowserState")
+    static let getCurrentUrlForBrowserState = Notification.Name("PassageGetCurrentUrlForBrowserState")
     static let showUIWebView = Notification.Name("PassageShowUIWebView")
     static let showAutomationWebView = Notification.Name("PassageShowAutomationWebView")
 }

@@ -281,6 +281,14 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             object: nil
         )
         
+        // Observe URL requests for browser state with screenshot
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(getCurrentUrlForBrowserStateNotification(_:)),
+            name: .getCurrentUrlForBrowserState,
+            object: nil
+        )
+        
         // Observe keyboard notifications to prevent keyboard from showing when automation webview has focus
         NotificationCenter.default.addObserver(
             self,
@@ -490,6 +498,118 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                     passageLogger.error("[WEBVIEW] Page data collection script failed: \(error)")
                 } else {
                     passageLogger.debug("[WEBVIEW] Page data collection script executed successfully")
+                }
+            }
+        }
+    }
+    
+    @objc private func getCurrentUrlForBrowserStateNotification(_ notification: Notification) {
+        passageLogger.info("[WEBVIEW URL] ========== GET CURRENT URL FOR BROWSER STATE ==========")
+        
+        guard let userInfo = notification.userInfo else {
+            passageLogger.error("[WEBVIEW URL] ❌ getCurrentUrlForBrowserState notification missing userInfo")
+            return
+        }
+        
+        // Log what data we received
+        passageLogger.info("[WEBVIEW URL] Notification userInfo keys: \(userInfo.keys.sorted { "\($0)" < "\($1)" })")
+        
+        if let screenshot = userInfo["screenshot"] as? String {
+            passageLogger.info("[WEBVIEW URL] ✅ Screenshot data received: \(screenshot.count) chars")
+        } else if userInfo["screenshot"] != nil {
+            passageLogger.warn("[WEBVIEW URL] ⚠️ Screenshot field present but not a String: \(type(of: userInfo["screenshot"]!))")
+        } else {
+            passageLogger.warn("[WEBVIEW URL] ⚠️ No screenshot data in notification")
+        }
+        
+        if let trigger = userInfo["trigger"] as? String {
+            passageLogger.debug("[WEBVIEW URL] Trigger: \(trigger)")
+        }
+        
+        if let interval = userInfo["interval"] as? TimeInterval {
+            passageLogger.debug("[WEBVIEW URL] Interval: \(interval)")
+        }
+        
+        if let imageOpt = userInfo["imageOptimization"] as? [String: Any] {
+            passageLogger.debug("[WEBVIEW URL] Image optimization: \(imageOpt)")
+        }
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else {
+                passageLogger.error("[WEBVIEW URL] ❌ Self is nil")
+                if let continuation = userInfo["continuation"] as? CheckedContinuation<Void, Never> {
+                    continuation.resume()
+                }
+                return
+            }
+            
+            guard let automationWebView = self.automationWebView else {
+                passageLogger.warn("[WEBVIEW URL] ⚠️ Automation webview not available, using fallback")
+                
+                // Fallback to using a default URL if automation webview not available
+                let browserStateData: [String: Any] = [
+                    "url": self.currentURL ?? "unknown",
+                    "screenshot": userInfo["screenshot"] ?? NSNull(),
+                    "trigger": userInfo["trigger"] ?? NSNull(),
+                    "interval": userInfo["interval"] ?? NSNull(),
+                    "imageOptimization": userInfo["imageOptimization"] ?? NSNull()
+                ]
+                
+                passageLogger.info("[WEBVIEW URL] 📤 Sending fallback browser state with URL: \(self.currentURL ?? "unknown")")
+                
+                NotificationCenter.default.post(
+                    name: .sendBrowserState,
+                    object: nil,
+                    userInfo: browserStateData
+                )
+                
+                if let continuation = userInfo["continuation"] as? CheckedContinuation<Void, Never> {
+                    continuation.resume()
+                }
+                return
+            }
+            
+            passageLogger.debug("[WEBVIEW URL] Getting current URL from automation webview...")
+            
+            // Get current URL from automation webview
+            automationWebView.evaluateJavaScript("window.location.href") { result, error in
+                var url = "unknown"
+                
+                if let error = error {
+                    passageLogger.warn("[WEBVIEW URL] Failed to get current URL: \(error)")
+                    url = self.currentURL ?? "unknown"
+                } else if let urlResult = result as? String {
+                    url = urlResult
+                    passageLogger.info("[WEBVIEW URL] ✅ Current URL from automation webview: \(passageLogger.truncateUrl(url, maxLength: 100))")
+                } else {
+                    passageLogger.warn("[WEBVIEW URL] URL result was not a string, using fallback")
+                    url = self.currentURL ?? "unknown"
+                }
+                
+                // Send browser state with all the screenshot data
+                let browserStateData: [String: Any] = [
+                    "url": url,
+                    "screenshot": userInfo["screenshot"] ?? NSNull(),
+                    "trigger": userInfo["trigger"] ?? NSNull(),
+                    "interval": userInfo["interval"] ?? NSNull(),
+                    "imageOptimization": userInfo["imageOptimization"] ?? NSNull()
+                ]
+                
+                passageLogger.info("[WEBVIEW URL] 📤 Sending browser state with URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+                let hasScreenshot = browserStateData["screenshot"] as? String != nil
+                passageLogger.info("[WEBVIEW URL] Browser state contains screenshot: \(hasScreenshot)")
+                
+                NotificationCenter.default.post(
+                    name: .sendBrowserState,
+                    object: nil,
+                    userInfo: browserStateData
+                )
+                
+                // Resume the continuation from the screenshot capture
+                if let continuation = userInfo["continuation"] as? CheckedContinuation<Void, Never> {
+                    continuation.resume()
+                } else {
+                    passageLogger.warn("[WEBVIEW URL] ⚠️ No continuation to resume")
                 }
             }
         }
@@ -1168,6 +1288,25 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 
                 isUIWebView: function() {
                   return false;
+                },
+                
+                // Screenshot capture function
+                captureScreenshot: function() {
+                  console.log('[Passage] captureScreenshot called');
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'captureScreenshot',
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      });
+                      console.log('[Passage] Screenshot capture request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for screenshot capture');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error capturing screenshot:', error);
+                  }
                 }
               };
               
@@ -1331,6 +1470,25 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 
                 isUIWebView: function() {
                   return true;
+                },
+                
+                // Screenshot capture function
+                captureScreenshot: function() {
+                  console.log('[Passage] captureScreenshot called');
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'captureScreenshot',
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                      console.log('[Passage] Screenshot capture request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for screenshot capture');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error capturing screenshot:', error);
+                  }
                 }
               };
               
@@ -2110,88 +2268,265 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     // MARK: - Screenshot Support (matching React Native implementation)
     
+    // Structure to hold optimized image data with base64 string
+    private struct OptimizedImageData {
+        let data: Data
+        let base64String: String
+        let format: String
+        let originalSize: CGSize
+        let optimizedSize: CGSize
+        let compressionQuality: Double
+    }
+    
     private func setupScreenshotAccessors() {
+        passageLogger.info("[WEBVIEW] ========== SETTING UP SCREENSHOT ACCESSORS ==========")
+        
         guard let remoteControl = remoteControl else {
-            passageLogger.debug("[WEBVIEW] No remote control available for screenshot setup")
+            passageLogger.error("[WEBVIEW] ❌ No remote control available for screenshot setup")
             return
         }
+        
+        passageLogger.info("[WEBVIEW] ✅ Remote control available, configuring screenshot accessors")
         
         // Set screenshot accessors (matching React Native implementation)
         remoteControl.setScreenshotAccessors((
             getCurrentScreenshot: { [weak self] in
-                return self?.currentScreenshot
+                let screenshot = self?.currentScreenshot
+                passageLogger.debug("[WEBVIEW ACCESSOR] getCurrentScreenshot called, returning: \(screenshot != nil ? "\(screenshot!.count) chars" : "nil")")
+                return screenshot
             },
             getPreviousScreenshot: { [weak self] in
-                return self?.previousScreenshot
+                let screenshot = self?.previousScreenshot
+                passageLogger.debug("[WEBVIEW ACCESSOR] getPreviousScreenshot called, returning: \(screenshot != nil ? "\(screenshot!.count) chars" : "nil")")
+                return screenshot
             }
         ))
         
         // Set capture image function
         remoteControl.setCaptureImageFunction({ [weak self] in
+            passageLogger.debug("[WEBVIEW ACCESSOR] captureImageFunction called")
             return await self?.captureScreenshot()
         })
         
-        passageLogger.debug("[WEBVIEW] Screenshot accessors configured")
+        passageLogger.info("[WEBVIEW] ✅ Screenshot accessors configured successfully")
+    }
+    
+    /// Apply image optimization based on JWT parameters
+    private func applyImageOptimization(to image: UIImage) -> OptimizedImageData? {
+        guard let remoteControl = remoteControl else {
+            passageLogger.error("[IMAGE OPTIMIZATION] No remote control available")
+            return nil
+        }
+        
+        // Get image optimization parameters from configuration (not JWT)
+        let imageOptParams = remoteControl.getImageOptimizationParameters()
+        
+        // Default values if not specified in configuration
+        let quality = (imageOptParams?["quality"] as? Double) ?? 0.6
+        let maxWidth = (imageOptParams?["maxWidth"] as? Double) ?? 960.0
+        let maxHeight = (imageOptParams?["maxHeight"] as? Double) ?? 540.0
+        let format = (imageOptParams?["format"] as? String) ?? "jpeg"
+        
+        let originalSize = image.size
+        
+        passageLogger.info("[IMAGE OPTIMIZATION] ========== APPLYING IMAGE OPTIMIZATION ==========")
+        passageLogger.info("[IMAGE OPTIMIZATION] Source: Configuration (not JWT)")
+        passageLogger.info("[IMAGE OPTIMIZATION] Config available: \(imageOptParams != nil)")
+        passageLogger.info("[IMAGE OPTIMIZATION] Original size: \(originalSize)")
+        passageLogger.info("[IMAGE OPTIMIZATION] Max dimensions: \(maxWidth)x\(maxHeight)")
+        passageLogger.info("[IMAGE OPTIMIZATION] Quality: \(quality)")
+        passageLogger.info("[IMAGE OPTIMIZATION] Format: \(format)")
+        
+        // Calculate new size maintaining aspect ratio
+        let aspectRatio = originalSize.width / originalSize.height
+        var newWidth = originalSize.width
+        var newHeight = originalSize.height
+        
+        // Resize if image is larger than max dimensions
+        if originalSize.width > maxWidth || originalSize.height > maxHeight {
+            if aspectRatio > 1 {
+                // Landscape: width is the limiting factor
+                newWidth = min(originalSize.width, maxWidth)
+                newHeight = newWidth / aspectRatio
+            } else {
+                // Portrait: height is the limiting factor
+                newHeight = min(originalSize.height, maxHeight)
+                newWidth = newHeight * aspectRatio
+            }
+        }
+        
+        let newSize = CGSize(width: newWidth, height: newHeight)
+        passageLogger.info("[IMAGE OPTIMIZATION] Optimized size: \(newSize)")
+        
+        // Resize image if needed
+        let resizedImage: UIImage
+        if newSize != originalSize {
+            UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+            resizedImage = UIGraphicsGetImageFromCurrentImageContext() ?? image
+            UIGraphicsEndImageContext()
+            passageLogger.info("[IMAGE OPTIMIZATION] ✅ Image resized from \(originalSize) to \(newSize)")
+        } else {
+            resizedImage = image
+            passageLogger.info("[IMAGE OPTIMIZATION] ✅ No resizing needed")
+        }
+        
+        // Convert to appropriate format with compression
+        let imageData: Data?
+        let mimeType: String
+        
+        if format.lowercased() == "jpeg" || format.lowercased() == "jpg" {
+            imageData = resizedImage.jpegData(compressionQuality: quality)
+            mimeType = "data:image/jpeg;base64,"
+            passageLogger.info("[IMAGE OPTIMIZATION] ✅ Converted to JPEG with quality \(quality)")
+        } else {
+            imageData = resizedImage.pngData()
+            mimeType = "data:image/png;base64,"
+            passageLogger.info("[IMAGE OPTIMIZATION] ✅ Converted to PNG (quality parameter ignored for PNG)")
+        }
+        
+        guard let data = imageData else {
+            passageLogger.error("[IMAGE OPTIMIZATION] ❌ Failed to convert image to \(format)")
+            return nil
+        }
+        
+        let base64String = mimeType + data.base64EncodedString()
+        
+        let optimizedData = OptimizedImageData(
+            data: data,
+            base64String: base64String,
+            format: format,
+            originalSize: originalSize,
+            optimizedSize: newSize,
+            compressionQuality: quality
+        )
+        
+        passageLogger.info("[IMAGE OPTIMIZATION] ✅ Optimization complete:")
+        passageLogger.info("[IMAGE OPTIMIZATION]   Original: \(Int(originalSize.width))x\(Int(originalSize.height))")
+        passageLogger.info("[IMAGE OPTIMIZATION]   Optimized: \(Int(newSize.width))x\(Int(newSize.height))")
+        passageLogger.info("[IMAGE OPTIMIZATION]   Data size: \(data.count) bytes")
+        passageLogger.info("[IMAGE OPTIMIZATION]   Base64 length: \(base64String.count) chars")
+        
+        return optimizedData
     }
     
     private func captureScreenshot() async -> String? {
+        passageLogger.info("[WEBVIEW SCREENSHOT] ========== CAPTURING SCREENSHOT ==========")
+        
         // Only capture screenshot if record flag is true (matching React Native)
-        guard let remoteControl = remoteControl, remoteControl.getRecordFlag() else {
-            passageLogger.debug("[WEBVIEW] Screenshot capture skipped - record flag is false")
+        guard let remoteControl = remoteControl else {
+            passageLogger.error("[WEBVIEW SCREENSHOT] ❌ No remote control available")
+            return nil
+        }
+        
+        let captureScreenshotFlag = remoteControl.getCaptureScreenshotFlag()
+        passageLogger.info("[WEBVIEW SCREENSHOT] Capture screenshot flag: \(captureScreenshotFlag)")
+        
+        guard captureScreenshotFlag else {
+            passageLogger.warn("[WEBVIEW SCREENSHOT] ⚠️ Screenshot capture skipped - captureScreenshot flag is false")
             return nil
         }
         
         return await withCheckedContinuation { continuation in
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else {
+                    passageLogger.error("[WEBVIEW SCREENSHOT] ❌ Self is nil")
                     continuation.resume(returning: nil)
                     return
                 }
                 
-                // Capture screenshot of the automation webview (where the actual content is)
-                let targetWebView = self.automationWebView ?? self.uiWebView
-                
-                guard let webView = targetWebView else {
-                    passageLogger.error("[WEBVIEW] No webview available for screenshot capture")
+                // Always prefer automation webview for screenshot capture (where the actual content is)
+                guard let webView = self.automationWebView else {
+                    passageLogger.error("[WEBVIEW SCREENSHOT] ❌ Automation webview not available for screenshot capture")
+                    passageLogger.error("[WEBVIEW SCREENSHOT] automationWebView: \(self.automationWebView != nil)")
+                    passageLogger.error("[WEBVIEW SCREENSHOT] uiWebView: \(self.uiWebView != nil)")
                     continuation.resume(returning: nil)
                     return
                 }
                 
-                passageLogger.debug("[WEBVIEW] Capturing screenshot of \(webView == self.automationWebView ? "automation" : "ui") webview")
+                passageLogger.info("[WEBVIEW SCREENSHOT] 📸 Capturing screenshot of automation webview")
+                passageLogger.debug("[WEBVIEW SCREENSHOT] WebView bounds: \(webView.bounds)")
+                passageLogger.debug("[WEBVIEW SCREENSHOT] WebView isHidden: \(webView.isHidden)")
+                passageLogger.debug("[WEBVIEW SCREENSHOT] WebView alpha: \(webView.alpha)")
+                passageLogger.debug("[WEBVIEW SCREENSHOT] WebView URL: \(webView.url?.absoluteString ?? "nil")")
+                passageLogger.debug("[WEBVIEW SCREENSHOT] WebView isLoading: \(webView.isLoading)")
+                passageLogger.debug("[WEBVIEW SCREENSHOT] WebView estimatedProgress: \(webView.estimatedProgress)")
+                passageLogger.debug("[WEBVIEW SCREENSHOT] WebView hasOnlySecureContent: \(webView.hasOnlySecureContent)")
                 
-                // Take screenshot using WKWebView's built-in screenshot functionality
+                // WKWebView.takeSnapshot requires webview to be visible to capture content
+                // Instead of changing alpha, temporarily show it behind the UI webview (invisible to user)
+                let originalAlpha = webView.alpha
+                let needsVisibility = originalAlpha == 0
+                
+                if needsVisibility {
+                    passageLogger.debug("[WEBVIEW SCREENSHOT] Temporarily showing webview behind UI webview for snapshot")
+                    // Make it visible but keep it behind the UI webview so user doesn't see it
+                    webView.alpha = 1.0
+                    if let uiWebView = self.uiWebView {
+                        self.view.sendSubviewToBack(webView)
+                        self.view.bringSubviewToFront(uiWebView)
+                        passageLogger.debug("[WEBVIEW SCREENSHOT] Automation webview moved behind UI webview")
+                    }
+                }
+                
+                // Configure snapshot with proper bounds and screen update handling
                 let config = WKSnapshotConfiguration()
                 config.rect = webView.bounds
+                // Ensure we capture after screen updates complete
+                config.afterScreenUpdates = true
                 
-                webView.takeSnapshot(with: config) { [weak self] image, error in
+                passageLogger.debug("[WEBVIEW SCREENSHOT] Using WKWebView.takeSnapshot with config - rect: \(config.rect), afterScreenUpdates: \(config.afterScreenUpdates)")
+                
+                // Minimal delay to ensure content is rendered, then capture immediately
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    // Use WKWebView.takeSnapshot - specifically designed for WKWebView content
+                    webView.takeSnapshot(with: config) { [weak self] image, error in
+                        // Restore original visibility state immediately
+                        if needsVisibility {
+                            webView.alpha = originalAlpha
+                            passageLogger.debug("[WEBVIEW SCREENSHOT] Restored webview to hidden state (alpha: \(originalAlpha))")
+                        }
+                    
                     if let error = error {
-                        passageLogger.error("[WEBVIEW] Screenshot capture failed: \(error)")
+                        passageLogger.error("[WEBVIEW SCREENSHOT] ❌ WKWebView.takeSnapshot failed: \(error)")
+                        passageLogger.error("[WEBVIEW SCREENSHOT] Error details: \(error.localizedDescription)")
                         continuation.resume(returning: nil)
                         return
                     }
                     
                     guard let image = image else {
-                        passageLogger.error("[WEBVIEW] Screenshot capture returned nil image")
+                        passageLogger.error("[WEBVIEW SCREENSHOT] ❌ WKWebView.takeSnapshot returned nil image")
                         continuation.resume(returning: nil)
                         return
                     }
                     
-                    // Convert to base64 string (matching React Native format)
-                    guard let imageData = image.pngData() else {
-                        passageLogger.error("[WEBVIEW] Failed to convert screenshot to PNG data")
+                    passageLogger.info("[WEBVIEW SCREENSHOT] ✅ WKWebView.takeSnapshot succeeded, captured image size: \(image.size)")
+                    
+                    // Apply image optimization from configuration parameters
+                    let optimizedImageData = self?.applyImageOptimization(to: image)
+                    
+                    guard let optimizedData = optimizedImageData else {
+                        passageLogger.error("[WEBVIEW SCREENSHOT] ❌ Failed to apply image optimization")
                         continuation.resume(returning: nil)
                         return
                     }
                     
-                    let base64String = "data:image/png;base64," + imageData.base64EncodedString()
+                    let base64String = optimizedData.base64String
                     
                     // Update screenshot state - move current to previous, set new as current
                     self?.previousScreenshot = self?.currentScreenshot
                     self?.currentScreenshot = base64String
                     
-                    passageLogger.debug("[WEBVIEW] Screenshot captured successfully: \(base64String.count) chars")
+                    passageLogger.info("[WEBVIEW SCREENSHOT] ✅ Screenshot captured and optimized successfully:")
+                    passageLogger.info("[WEBVIEW SCREENSHOT]   Original: \(Int(optimizedData.originalSize.width))x\(Int(optimizedData.originalSize.height))")
+                    passageLogger.info("[WEBVIEW SCREENSHOT]   Optimized: \(Int(optimizedData.optimizedSize.width))x\(Int(optimizedData.optimizedSize.height))")
+                    passageLogger.info("[WEBVIEW SCREENSHOT]   Format: \(optimizedData.format)")
+                    passageLogger.info("[WEBVIEW SCREENSHOT]   Quality: \(optimizedData.compressionQuality)")
+                    passageLogger.info("[WEBVIEW SCREENSHOT]   Final size: \(base64String.count) chars")
+                    passageLogger.info("[WEBVIEW SCREENSHOT]   Method: WKWebView.takeSnapshot (proper WebView content capture)")
                     
-                    continuation.resume(returning: base64String)
+                        continuation.resume(returning: base64String)
+                    }
                 }
             }
         }
@@ -2746,6 +3081,15 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                         // Track analytics
                         passageAnalytics.trackNavigationSuccess(url: url, webViewType: webViewType, duration: nil)
                     }
+                case "captureScreenshot":
+                    // Handle window.passage.captureScreenshot calls
+                    passageLogger.info("[WEBVIEW] Manual screenshot capture requested from \(webViewType) webview")
+                    
+                    // Trigger screenshot capture via remote control
+                    Task {
+                        await remoteControl?.captureScreenshotManually()
+                    }
+                    
                 case PassageConstants.MessageTypes.message:
                     // Handle window.passage.postMessage calls
                     if let data = body["data"] {
