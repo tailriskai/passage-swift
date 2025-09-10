@@ -1102,7 +1102,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         
         var logoView: UIView
         
-        if let logoImage = UIImage(named: "passage", in: Bundle.module, compatibleWith: nil) {
+        if let logoImage = UIImage(named: "passage", in: Bundle(for: Self.self), compatibleWith: nil) {
             // Use embedded image logo
             let logoImageView = UIImageView(image: logoImage)
             logoImageView.contentMode = UIView.ContentMode.scaleAspectFit
