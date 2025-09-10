@@ -2302,10 +2302,28 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             }
         ))
         
-        // Set capture image function
+        // Set capture image function - chooses between webview-only or whole UI based on flags
         remoteControl.setCaptureImageFunction({ [weak self] in
             passageLogger.debug("[WEBVIEW ACCESSOR] captureImageFunction called")
-            return await self?.captureScreenshot()
+            
+            guard let self = self, let remoteControl = self.remoteControl else {
+                return nil
+            }
+            
+            // Check record flag first - if true, capture whole UI
+            if remoteControl.getRecordFlag() {
+                passageLogger.debug("[WEBVIEW ACCESSOR] Record flag is true - capturing whole UI")
+                return await self.captureWholeUIScreenshot()
+            }
+            // Otherwise, check captureScreenshot flag for webview-only capture
+            else if remoteControl.getCaptureScreenshotFlag() {
+                passageLogger.debug("[WEBVIEW ACCESSOR] CaptureScreenshot flag is true - capturing automation webview only")
+                return await self.captureScreenshot()
+            }
+            else {
+                passageLogger.debug("[WEBVIEW ACCESSOR] No screenshot flags enabled")
+                return nil
+            }
         })
         
         passageLogger.info("[WEBVIEW] ✅ Screenshot accessors configured successfully")
@@ -2413,7 +2431,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     private func captureScreenshot() async -> String? {
         passageLogger.info("[WEBVIEW SCREENSHOT] ========== CAPTURING SCREENSHOT ==========")
         
-        // Only capture screenshot if record flag is true (matching React Native)
+        // Only capture screenshot if captureScreenshot flag is true (webview-only capture)
         guard let remoteControl = remoteControl else {
             passageLogger.error("[WEBVIEW SCREENSHOT] ❌ No remote control available")
             return nil
@@ -2528,6 +2546,80 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                         continuation.resume(returning: base64String)
                     }
                 }
+            }
+        }
+    }
+    
+    /// Capture the whole UI view (including native iOS elements) when record flag is true
+    private func captureWholeUIScreenshot() async -> String? {
+        passageLogger.info("[WHOLE UI SCREENSHOT] ========== CAPTURING WHOLE UI SCREENSHOT ==========")
+        
+        guard let remoteControl = remoteControl else {
+            passageLogger.error("[WHOLE UI SCREENSHOT] ❌ No remote control available")
+            return nil
+        }
+        
+        let recordFlag = remoteControl.getRecordFlag()
+        passageLogger.info("[WHOLE UI SCREENSHOT] Record flag: \(recordFlag)")
+        
+        guard recordFlag else {
+            passageLogger.warn("[WHOLE UI SCREENSHOT] ⚠️ Whole UI screenshot capture skipped - record flag is false")
+            return nil
+        }
+        
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else {
+                    passageLogger.error("[WHOLE UI SCREENSHOT] ❌ Self is nil")
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                guard let view = self.view else {
+                    passageLogger.error("[WHOLE UI SCREENSHOT] ❌ View is nil")
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                passageLogger.info("[WHOLE UI SCREENSHOT] 📸 Capturing screenshot of whole UI view")
+                passageLogger.debug("[WHOLE UI SCREENSHOT] View bounds: \(view.bounds)")
+                passageLogger.debug("[WHOLE UI SCREENSHOT] View frame: \(view.frame)")
+                passageLogger.debug("[WHOLE UI SCREENSHOT] View isHidden: \(view.isHidden)")
+                passageLogger.debug("[WHOLE UI SCREENSHOT] View alpha: \(view.alpha)")
+                
+                // Use UIView rendering to capture the entire view hierarchy including native iOS elements
+                let renderer = UIGraphicsImageRenderer(bounds: view.bounds)
+                let image = renderer.image { context in
+                    // Render the entire view hierarchy into the context
+                    view.layer.render(in: context.cgContext)
+                }
+                
+                passageLogger.info("[WHOLE UI SCREENSHOT] ✅ Whole UI screenshot captured, image size: \(image.size)")
+                
+                // Apply image optimization from configuration parameters
+                let optimizedImageData = self.applyImageOptimization(to: image)
+                
+                guard let optimizedData = optimizedImageData else {
+                    passageLogger.error("[WHOLE UI SCREENSHOT] ❌ Failed to apply image optimization")
+                    continuation.resume(returning: nil)
+                    return
+                }
+                
+                let base64String = optimizedData.base64String
+                
+                // Update screenshot state - move current to previous, set new as current
+                self.previousScreenshot = self.currentScreenshot
+                self.currentScreenshot = base64String
+                
+                passageLogger.info("[WHOLE UI SCREENSHOT] ✅ Whole UI screenshot captured and optimized successfully:")
+                passageLogger.info("[WHOLE UI SCREENSHOT]   Original: \(Int(optimizedData.originalSize.width))x\(Int(optimizedData.originalSize.height))")
+                passageLogger.info("[WHOLE UI SCREENSHOT]   Optimized: \(Int(optimizedData.optimizedSize.width))x\(Int(optimizedData.optimizedSize.height))")
+                passageLogger.info("[WHOLE UI SCREENSHOT]   Format: \(optimizedData.format)")
+                passageLogger.info("[WHOLE UI SCREENSHOT]   Quality: \(optimizedData.compressionQuality)")
+                passageLogger.info("[WHOLE UI SCREENSHOT]   Final size: \(base64String.count) chars")
+                passageLogger.info("[WHOLE UI SCREENSHOT]   Method: UIGraphicsImageRenderer (captures whole UI including native elements)")
+                
+                continuation.resume(returning: base64String)
             }
         }
     }

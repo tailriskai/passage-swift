@@ -504,7 +504,11 @@ class RemoteControlManager {
     
     func getCaptureScreenshotInterval() -> TimeInterval? {
         guard let intentToken = intentToken else { return nil }
-        return extractCaptureScreenshotInterval(from: intentToken)
+        let extractedInterval = extractCaptureScreenshotInterval(from: intentToken)
+        if extractedInterval == nil {
+            passageLogger.info("[JWT DECODE] Using default captureScreenshotInterval: 5.0 seconds")
+        }
+        return extractedInterval ?? 5.0 // Default to 5 seconds
     }
     
     func getImageOptimizationParameters() -> [String: Any]? {
@@ -571,9 +575,9 @@ class RemoteControlManager {
                     passageLogger.info("[JWT DECODE] ✅ Found captureScreenshotInterval (String): \(intervalString) -> \(intervalSeconds)")
                     return intervalSeconds
                 } else {
-                    passageLogger.warn("[JWT DECODE] No 'captureScreenshotInterval' field found in JWT payload")
+                    passageLogger.warn("[JWT DECODE] No 'captureScreenshotInterval' field found in JWT payload - will use default 5s interval")
                     if let intervalValue = json["captureScreenshotInterval"] {
-                        passageLogger.warn("[JWT DECODE] captureScreenshotInterval has unexpected type: \(type(of: intervalValue)) = \(intervalValue)")
+                        passageLogger.warn("[JWT DECODE] captureScreenshotInterval has unexpected type: \(type(of: intervalValue)) = \(intervalValue) - will use default 5s interval")
                     }
                 }
             }
@@ -605,10 +609,10 @@ class RemoteControlManager {
         }
         
         let interval = getCaptureScreenshotInterval()
-        passageLogger.info("[SCREENSHOT TIMER] Screenshot interval from JWT: \(interval?.description ?? "nil")")
+        passageLogger.info("[SCREENSHOT TIMER] Screenshot interval (JWT or default): \(interval?.description ?? "nil")")
         
         guard let interval = interval, interval > 0 else {
-            passageLogger.error("[SCREENSHOT TIMER] ❌ No valid screenshot interval found in JWT - no timer will be created")
+            passageLogger.error("[SCREENSHOT TIMER] ❌ No valid screenshot interval available - no timer will be created")
             return
         }
         
@@ -1797,7 +1801,7 @@ class RemoteControlManager {
                     let localStorage = self?.convertStorageItems(pageData["localStorage"] as? [[String: Any]]) ?? []
                     let sessionStorage = self?.convertStorageItems(pageData["sessionStorage"] as? [[String: Any]]) ?? []
                     
-                    // Collect screenshot only if record flag is true (matching React Native)
+                    // Collect screenshot based on record flag (whole UI) or captureScreenshot flag (webview only)
                     self?.collectScreenshot { screenshot in
                         let fullPageData = PageData(
                             cookies: cookies,
@@ -1917,16 +1921,21 @@ class RemoteControlManager {
     }
     
     private func collectScreenshot(completion: @escaping (String?) -> Void) {
-        // Only include screenshot if captureScreenshot flag is true (separate from record flag)
-        let includeScreenshot = getCaptureScreenshotFlag()
+        // Check both record flag (whole UI) and captureScreenshot flag (webview only)
+        let recordFlag = getRecordFlag()
+        let captureScreenshotFlag = getCaptureScreenshotFlag()
         
-        guard includeScreenshot else {
-            passageLogger.debug("[REMOTE CONTROL] Screenshot collection skipped - captureScreenshot flag is false")
+        guard recordFlag || captureScreenshotFlag else {
+            passageLogger.debug("[REMOTE CONTROL] Screenshot collection skipped - both record and captureScreenshot flags are false")
             completion(nil)
             return
         }
         
-        passageLogger.debug("[REMOTE CONTROL] Collecting screenshot for captureScreenshot mode using WKWebView.takeSnapshot")
+        if recordFlag {
+            passageLogger.debug("[REMOTE CONTROL] Collecting screenshot for record mode - whole UI capture")
+        } else {
+            passageLogger.debug("[REMOTE CONTROL] Collecting screenshot for captureScreenshot mode - webview only")
+        }
         
         // Try to get current screenshot from accessors first
         if let currentScreenshot = screenshotAccessors?.getCurrentScreenshot() {
@@ -1964,9 +1973,17 @@ class RemoteControlManager {
         
         // Log page data status (matching React Native's truncated logging approach)
         if let pageData = result.pageData {
-            let captureInfo = getCaptureScreenshotFlag() ? " (screenshot capture enabled)" : " (screenshot capture disabled)"
-            let recordInfo = getRecordFlag() ? " (record mode)" : " (non-record mode)"
-            passageLogger.info("[REMOTE CONTROL] ✅ Sending result WITH page data\(captureInfo)\(recordInfo): {")
+            let recordFlag = getRecordFlag()
+            let captureScreenshotFlag = getCaptureScreenshotFlag()
+            let screenshotInfo: String
+            if recordFlag {
+                screenshotInfo = " (record mode - whole UI screenshot)"
+            } else if captureScreenshotFlag {
+                screenshotInfo = " (captureScreenshot mode - webview only)"
+            } else {
+                screenshotInfo = " (no screenshot capture)"
+            }
+            passageLogger.info("[REMOTE CONTROL] ✅ Sending result WITH page data\(screenshotInfo): {")
             passageLogger.info("[REMOTE CONTROL]   cookies: \(pageData.cookies?.count ?? 0) items")
             passageLogger.info("[REMOTE CONTROL]   localStorage: \(pageData.localStorage?.count ?? 0) items")
             passageLogger.info("[REMOTE CONTROL]   sessionStorage: \(pageData.sessionStorage?.count ?? 0) items")
@@ -2122,7 +2139,7 @@ class RemoteControlManager {
         
         passageLogger.debug("[REMOTE CONTROL] Completing recording for command: \(currentCommand.id)")
         
-        // Collect page data with screenshot if record flag is enabled
+        // Collect page data with screenshot based on record flag (whole UI) or captureScreenshot flag (webview only)
         await withCheckedContinuation { continuation in
             getPageData { pageData in
                 // Send done result with success status
@@ -2169,7 +2186,7 @@ class RemoteControlManager {
         
         passageLogger.debug("[REMOTE CONTROL] Capturing recording data for command: \(currentCommand.id)")
         
-        // Collect page data with screenshot if record flag is enabled
+        // Collect page data with screenshot based on record flag (whole UI) or captureScreenshot flag (webview only)
         await withCheckedContinuation { continuation in
             getPageData { pageData in
                 // Send success result (not done, so session continues)
