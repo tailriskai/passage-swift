@@ -1019,6 +1019,30 @@ class RemoteControlManager {
                 
                 do {
                     if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        // ADD COMPREHENSIVE CONFIGURATION LOGGING
+                        passageLogger.info("[REMOTE CONTROL] ========== FULL CONFIGURATION RESPONSE ==========")
+                        passageLogger.info("[REMOTE CONTROL] Configuration keys: \(json.keys.sorted())")
+                        
+                        // Log integration data specifically
+                        if let integration = json["integration"] as? [String: Any] {
+                            passageLogger.info("[REMOTE CONTROL] ✅ Integration data found: \(integration)")
+                            let integrationUrl = integration["url"] as? String
+                            let integrationName = integration["name"] as? String
+                            let integrationSlug = integration["slug"] as? String
+                            passageLogger.info("[REMOTE CONTROL] Integration details:")
+                            passageLogger.info("[REMOTE CONTROL]   - Name: \(integrationName ?? "nil")")
+                            passageLogger.info("[REMOTE CONTROL]   - Slug: \(integrationSlug ?? "nil")")
+                            passageLogger.info("[REMOTE CONTROL]   - URL: \(integrationUrl ?? "NIL - THIS IS THE PROBLEM!")")
+                        } else {
+                            passageLogger.error("[REMOTE CONTROL] ❌ NO INTEGRATION FIELD IN CONFIGURATION!")
+                            passageLogger.error("[REMOTE CONTROL] This means the backend is not returning integration data")
+                        }
+                        
+                        // Log other important fields
+                        passageLogger.debug("[REMOTE CONTROL] Cookie domains: \(json["cookieDomains"] as? [String] ?? [])")
+                        passageLogger.debug("[REMOTE CONTROL] Global JS length: \((json["globalJavascript"] as? String ?? "").count) chars")
+                        passageLogger.debug("[REMOTE CONTROL] Automation user agent: \(json["automationUserAgent"] as? String ?? "empty")")
+                        
                         self?.cookieDomains = json["cookieDomains"] as? [String] ?? []
                         let newGlobalJavascript = json["globalJavascript"] as? String ?? ""
                         
@@ -1052,7 +1076,22 @@ class RemoteControlManager {
                         
                         // Extract automationUserAgent - undefined/null becomes empty string
                         self?.automationUserAgent = json["automationUserAgent"] as? String ?? ""
-                        self?.integrationUrl = (json["integration"] as? [String: Any])?["url"] as? String
+                        
+                        // Extract integration URL with detailed logging
+                        let extractedIntegrationUrl = (json["integration"] as? [String: Any])?["url"] as? String
+                        self?.integrationUrl = extractedIntegrationUrl
+                        
+                        passageLogger.info("[REMOTE CONTROL] ========== INTEGRATION URL EXTRACTION ==========")
+                        passageLogger.info("[REMOTE CONTROL] Extracted integration URL: \(extractedIntegrationUrl ?? "NIL")")
+                        passageLogger.info("[REMOTE CONTROL] Stored in self.integrationUrl: \(self?.integrationUrl ?? "NIL")")
+                        
+                        if extractedIntegrationUrl == nil {
+                            passageLogger.error("[REMOTE CONTROL] ❌ CRITICAL: No integration URL found!")
+                            passageLogger.error("[REMOTE CONTROL] This means automation webview will never load")
+                            passageLogger.error("[REMOTE CONTROL] Backend must provide integration.url in configuration")
+                        } else {
+                            passageLogger.info("[REMOTE CONTROL] ✅ Integration URL successfully extracted")
+                        }
                         
                         // Extract imageOptimization parameters from configuration
                         self?.configImageOptimization = json["imageOptimization"] as? [String: Any]
@@ -1077,7 +1116,19 @@ class RemoteControlManager {
                         
                         // Notify about configuration update (matches React Native implementation)
                         if let self = self, let callback = self.onConfigurationUpdated {
+                            passageLogger.info("[REMOTE CONTROL] ========== CALLING CONFIGURATION CALLBACK ==========")
+                            passageLogger.info("[REMOTE CONTROL] 📞 Calling onConfigurationUpdated callback")
+                            passageLogger.info("[REMOTE CONTROL] Callback exists: true")
+                            passageLogger.info("[REMOTE CONTROL] Will pass userAgent: '\(self.automationUserAgent)'")
+                            passageLogger.info("[REMOTE CONTROL] Will pass integrationUrl: '\(self.integrationUrl ?? "NIL")'")
+                            
                             callback(self.automationUserAgent, self.integrationUrl)
+                            
+                            passageLogger.info("[REMOTE CONTROL] ✅ Configuration callback completed")
+                        } else {
+                            passageLogger.error("[REMOTE CONTROL] ❌ Configuration callback NOT called!")
+                            passageLogger.error("[REMOTE CONTROL] self: \(self != nil)")
+                            passageLogger.error("[REMOTE CONTROL] callback: \(self?.onConfigurationUpdated != nil)")
                         }
                         if let self = self {
                             passageAnalytics.trackConfigurationSuccess(userAgent: self.automationUserAgent, integrationUrl: self.integrationUrl)
@@ -1263,12 +1314,34 @@ class RemoteControlManager {
         
         // Custom events
         socket?.on("command") { [weak self] data, ack in
+            passageLogger.info("[SOCKET EVENT] ========== COMMAND RECEIVED ==========")
             passageLogger.info("[SOCKET EVENT] 📨 COMMAND received")
-            passageLogger.debug("[SOCKET EVENT] Command data: \(data)")
+            passageLogger.debug("[SOCKET EVENT] Raw command data: \(data)")
             
             guard let commandData = data.first as? [String: Any] else {
-                passageLogger.error("[SOCKET EVENT] Invalid command data format")
+                passageLogger.error("[SOCKET EVENT] ❌ Invalid command data format")
+                passageLogger.error("[SOCKET EVENT] Expected dictionary, got: \(type(of: data.first))")
                 return
+            }
+            
+            // Log command type immediately to track what we're receiving
+            let commandType = commandData["type"] as? String ?? "unknown"
+            let commandId = commandData["id"] as? String ?? "no-id"
+            passageLogger.info("[SOCKET EVENT] ✅ Command type: \(commandType)")
+            passageLogger.info("[SOCKET EVENT] Command ID: \(commandId)")
+            
+            if commandType == "navigate" {
+                passageLogger.info("[SOCKET EVENT] 🧭 NAVIGATE COMMAND DETECTED!")
+                if let args = commandData["args"] as? [String: Any],
+                   let url = args["url"] as? String {
+                    passageLogger.info("[SOCKET EVENT] Navigate URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+                } else {
+                    passageLogger.error("[SOCKET EVENT] ❌ Navigate command missing URL in args")
+                }
+            } else if commandType == "wait" {
+                passageLogger.info("[SOCKET EVENT] ⏳ WAIT COMMAND DETECTED")
+            } else {
+                passageLogger.info("[SOCKET EVENT] 📝 OTHER COMMAND: \(commandType)")
             }
             
             passageLogger.info("[SOCKET EVENT] Processing command...")
@@ -1470,21 +1543,34 @@ class RemoteControlManager {
         currentCommand = command
         
         // Execute command
+        passageLogger.info("[COMMAND HANDLER] ========== EXECUTING COMMAND ==========")
+        passageLogger.info("[COMMAND HANDLER] Command type: \(command.type.rawValue)")
+        passageLogger.info("[COMMAND HANDLER] Command ID: \(command.id)")
+        
         switch command.type {
         case .navigate:
+            passageLogger.info("[COMMAND HANDLER] 🧭 Executing NAVIGATE command")
             handleNavigate(command)
         case .click, .input, .wait, .injectScript:
+            passageLogger.info("[COMMAND HANDLER] 📝 Executing SCRIPT command (\(command.type.rawValue))")
             handleScriptExecution(command)
         case .done:
+            passageLogger.info("[COMMAND HANDLER] ✅ Executing DONE command")
             handleDone(command)
         }
     }
     
     private func handleNavigate(_ command: RemoteCommand) {
+        passageLogger.info("[COMMAND HANDLER] ========== NAVIGATE COMMAND RECEIVED ==========")
+        passageLogger.info("[COMMAND HANDLER] 🧭 Processing navigate command: \(command.id)")
+        
         guard let url = command.args?["url"] as? String else {
+            passageLogger.error("[COMMAND HANDLER] ❌ No URL provided in navigate command!")
             sendError(commandId: command.id, error: "No URL provided")
             return
         }
+        
+        passageLogger.info("[COMMAND HANDLER] ✅ Navigate URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
         
         // Parse and store successUrls (override any existing ones)
         if let successUrlsData = command.args?["successUrls"] as? [[String: Any]] {
@@ -1506,15 +1592,18 @@ class RemoteControlManager {
             passageLogger.debug("[COMMAND HANDLER] No success URLs provided, cleared existing ones")
         }
         
-        passageLogger.info("[COMMAND HANDLER] Navigating to URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.info("[COMMAND HANDLER] 🚀 SENDING NAVIGATE NOTIFICATION")
+        passageLogger.info("[COMMAND HANDLER] This should trigger automation webview navigation")
         passageAnalytics.trackCommandReceived(commandId: command.id, commandType: command.type.rawValue, userActionRequired: command.userActionRequired ?? false)
         
         DispatchQueue.main.async {
+            passageLogger.info("[COMMAND HANDLER] 📡 Posting navigateInAutomation notification")
             NotificationCenter.default.post(
                 name: .navigateInAutomation,
                 object: nil,
                 userInfo: ["url": url, "commandId": command.id]
             )
+            passageLogger.info("[COMMAND HANDLER] ✅ Navigate notification posted successfully")
         }
     }
     

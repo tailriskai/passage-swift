@@ -68,6 +68,15 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     // Store initial URL to load after view appears
     private var initialURLToLoad: String?
     
+    // Reference to modern close button for animations
+    private var modernCloseButton: UIView?
+    
+    // Header container that stays above webviews
+    private var headerContainer: UIView?
+    
+    // Track webview state before showing close confirmation
+    private var wasShowingAutomationBeforeClose: Bool = false
+    
     // Debug: force rendering just one webview with a predefined URL
     private let debugSingleWebViewUrl: String? = nil
         // Force a simple single webview configuration
@@ -98,6 +107,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         passageLogger.info("[WEBVIEW] View in window: \(view.window != nil)")
         passageLogger.info("[WEBVIEW] View superview: \(view.superview != nil)")
         
+        // Disable modal drag-to-dismiss
+        isModalInPresentation = true
+        
         // Setup screenshot accessors for remote control
         setupScreenshotAccessors()
         
@@ -106,10 +118,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         // Don't set up notification observers here - do it in viewDidAppear
         // to avoid duplicate observers from reused view controllers
         
-        // Hide navigation bar completely to remove white header
+        // Hide navigation bar since we're using custom header
         navigationController?.setNavigationBarHidden(true, animated: false)
         
-        passageLogger.debug("[WEBVIEW] Navigation bar hidden to remove white header")
+        passageLogger.debug("[WEBVIEW] Navigation bar shown with custom header")
 
         // If in debug single-webview mode, we've already created and loaded it in setupWebViews.
         if let debugUrl = debugSingleWebViewUrl, !debugUrl.isEmpty {
@@ -214,11 +226,12 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     }
     
     private func setupUI() {
-        // Set background color to match web app container (light gray)
-        view.backgroundColor = PassageConstants.Colors.webViewBackground
+        // Set background color to white to match navigation bar
+        view.backgroundColor = UIColor.white
         
         // No close button - modal should be dismissed via swipe down or programmatically
     }
+    
     
     private func setupNotificationObservers() {
         passageLogger.info("[WEBVIEW] Setting up notification observers")
@@ -318,13 +331,18 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     }
     
     @objc private func navigateInAutomationNotification(_ notification: Notification) {
+        passageLogger.info("[WEBVIEW] ========== NAVIGATE IN AUTOMATION NOTIFICATION ==========")
+        passageLogger.info("[WEBVIEW] 📡 Received navigateInAutomation notification")
+        
         guard let url = notification.userInfo?["url"] as? String else {
-            passageLogger.error("[WEBVIEW] Navigate notification missing URL")
+            passageLogger.error("[WEBVIEW] ❌ Navigate notification missing URL")
+            passageLogger.error("[WEBVIEW] Available userInfo keys: \(notification.userInfo?.keys.map { "\($0)" } ?? [])")
             return
         }
         let commandId = notification.userInfo?["commandId"] as? String
-        passageLogger.info("[WEBVIEW] Received navigate notification: \(passageLogger.truncateUrl(url, maxLength: 100))")
-        passageLogger.debug("[WEBVIEW] Command ID: \(commandId ?? "nil")")
+        passageLogger.info("[WEBVIEW] ✅ Navigate URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.info("[WEBVIEW] Command ID: \(commandId ?? "nil")")
+        passageLogger.info("[WEBVIEW] 🚀 Calling navigateInAutomationWebView...")
         navigateInAutomationWebView(url)
     }
     
@@ -1008,6 +1026,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             return
         }
         
+        // Create header container first so we can reference it in webview constraints
+        createHeaderContainer()
+        
         // Create both webviews (default behavior)
         uiWebView = createWebView(webViewType: PassageConstants.WebViewTypes.ui)
         automationWebView = createWebView(webViewType: PassageConstants.WebViewTypes.automation)
@@ -1016,16 +1037,16 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         view.addSubview(uiWebView)
         view.addSubview(automationWebView)
         
-        // Setup constraints for both webviews (they overlap)
+        // Setup constraints for both webviews (they overlap) - start below header container
         NSLayoutConstraint.activate([
-            // UI webview constraints
-            uiWebView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            // UI webview constraints - start below header container
+            uiWebView.topAnchor.constraint(equalTo: headerContainer!.bottomAnchor),
             uiWebView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             uiWebView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             uiWebView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
             
             // Automation webview constraints (same as UI)
-            automationWebView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            automationWebView.topAnchor.constraint(equalTo: headerContainer!.bottomAnchor),
             automationWebView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             automationWebView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             automationWebView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
@@ -1040,6 +1061,187 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         automationWebView.shouldPreventFirstResponder = true
         uiWebView.shouldPreventFirstResponder = false
         
+        // Ensure header is on top after adding webviews
+        if let header = headerContainer {
+            view.bringSubviewToFront(header)
+        }
+    }
+    
+    private func createHeaderContainer() {
+        // Create header container that will always stay above webviews
+        let container = UIView()
+        container.backgroundColor = UIColor.white
+        container.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Add container AFTER webviews to ensure proper layering
+        view.addSubview(container)
+        
+        // Position header container at the top with proper height
+        NSLayoutConstraint.activate([
+            container.topAnchor.constraint(equalTo: view.topAnchor),
+            container.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            container.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 57) // Extends to cover safe area + header height
+        ])
+        
+        self.headerContainer = container
+        
+        // Add header elements to the container
+        addLogoToContainer(container)
+        addCloseButtonToContainer(container)
+        addHeaderBorderToContainer(container)
+        
+        // Ensure header stays above webviews
+        view.bringSubviewToFront(container)
+    }
+    
+    private func addLogoToView() {
+        // Create logo view for direct placement on view
+        let logoContainer = UIView()
+        logoContainer.backgroundColor = UIColor.clear
+        
+        var logoView: UIView
+        
+        if let logoImage = UIImage(named: "passage", in: Bundle.module, compatibleWith: nil) {
+            // Use embedded image logo
+            let logoImageView = UIImageView(image: logoImage)
+            logoImageView.contentMode = UIView.ContentMode.scaleAspectFit
+            logoView = logoImageView
+        } else {
+            // Fallback to text logo
+            let logoLabel = UILabel()
+            logoLabel.text = "passage"
+            logoLabel.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+            logoLabel.textColor = UIColor(red: 0.2, green: 0.4, blue: 1.0, alpha: 1.0) // Passage blue
+            logoLabel.textAlignment = .center
+            logoView = logoLabel
+        }
+        
+        logoContainer.addSubview(logoView)
+        view.addSubview(logoContainer)
+        
+        logoContainer.translatesAutoresizingMaskIntoConstraints = false
+        logoView.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Center logo at top with exact 120x40 container
+        NSLayoutConstraint.activate([
+            logoContainer.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 28),
+            logoContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            logoContainer.widthAnchor.constraint(equalToConstant: 120),
+            logoContainer.heightAnchor.constraint(equalToConstant: 40),
+            
+            logoView.centerXAnchor.constraint(equalTo: logoContainer.centerXAnchor),
+            logoView.centerYAnchor.constraint(equalTo: logoContainer.centerYAnchor),
+            logoView.leadingAnchor.constraint(greaterThanOrEqualTo: logoContainer.leadingAnchor, constant: 4),
+            logoView.trailingAnchor.constraint(lessThanOrEqualTo: logoContainer.trailingAnchor, constant: -4),
+            logoView.topAnchor.constraint(greaterThanOrEqualTo: logoContainer.topAnchor, constant: 4),
+            logoView.bottomAnchor.constraint(lessThanOrEqualTo: logoContainer.bottomAnchor, constant: -4)
+        ])
+        
+        view.bringSubviewToFront(logoContainer)
+    }
+    
+    private func addCloseButtonToView() {
+        // Create simple bold X close button without background - black and bigger
+        let closeButton = UILabel()
+        closeButton.text = "×"
+        closeButton.font = UIFont.systemFont(ofSize: 32, weight: .light)
+        closeButton.textColor = UIColor.black
+        closeButton.textAlignment = .center
+        closeButton.backgroundColor = UIColor.clear
+        closeButton.isUserInteractionEnabled = true
+        
+        view.addSubview(closeButton)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Position in top-right corner - centered vertically with logo, 48x48 touch area
+        NSLayoutConstraint.activate([
+            closeButton.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 28),
+            closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            closeButton.widthAnchor.constraint(equalToConstant: 48),
+            closeButton.heightAnchor.constraint(equalToConstant: 48)
+        ])
+        
+        // Add tap gesture with animation
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(closeButtonTappedWithAnimation))
+        closeButton.addGestureRecognizer(tapGesture)
+        
+        // Store reference for animation
+        self.modernCloseButton = closeButton
+        
+        // Bring to front to ensure it's above webviews
+        view.bringSubviewToFront(closeButton)
+    }
+    
+    private func addHeaderBorder() {
+        // Create hairline grey border at bottom of header area
+        let borderView = UIView()
+        borderView.backgroundColor = UIColor.systemGray4
+        borderView.translatesAutoresizingMaskIntoConstraints = false
+        
+        view.addSubview(borderView)
+        
+        // Position border at bottom of header area (56pts from top = 28 + 28 for centered elements)
+        NSLayoutConstraint.activate([
+            borderView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 56),
+            borderView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            borderView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            borderView.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale) // True hairline thickness
+        ])
+        
+        // Bring to front but keep below logo and close button
+        view.bringSubviewToFront(borderView)
+    }
+    
+    private func addLogoToContainer(_ container: UIView) {
+        // Logo is hidden - no logo will be displayed in the header
+        passageLogger.debug("[WEBVIEW] Logo hidden - skipping logo creation")
+    }
+    
+    private func addCloseButtonToContainer(_ container: UIView) {
+        // Create close button for placement in header container
+        let closeButton = UILabel()
+        closeButton.text = "×"
+        closeButton.font = UIFont.systemFont(ofSize: 32, weight: .light)
+        closeButton.textColor = UIColor.black
+        closeButton.textAlignment = .center
+        closeButton.backgroundColor = UIColor.clear
+        closeButton.isUserInteractionEnabled = true
+        
+        container.addSubview(closeButton)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Position in header container's safe area portion
+        NSLayoutConstraint.activate([
+            closeButton.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 4),
+            closeButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            closeButton.widthAnchor.constraint(equalToConstant: 48),
+            closeButton.heightAnchor.constraint(equalToConstant: 48)
+        ])
+        
+        // Add tap gesture with animation
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(closeButtonTappedWithAnimation))
+        closeButton.addGestureRecognizer(tapGesture)
+        
+        // Store reference for animation
+        self.modernCloseButton = closeButton
+    }
+    
+    private func addHeaderBorderToContainer(_ container: UIView) {
+        // Create hairline grey border at bottom of header container
+        let borderView = UIView()
+        borderView.backgroundColor = UIColor.systemGray4
+        borderView.translatesAutoresizingMaskIntoConstraints = false
+        
+        container.addSubview(borderView)
+        
+        // Position border at bottom of header container
+        NSLayoutConstraint.activate([
+            borderView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            borderView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            borderView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            borderView.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale) // True hairline thickness
+        ])
     }
     
     private func generateGlobalJavaScript() -> String {
@@ -1686,33 +1888,63 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     // Navigate in automation webview (for remote control)
     func navigateInAutomationWebView(_ url: String) {
+        passageLogger.info("[WEBVIEW] ========== NAVIGATE IN AUTOMATION WEBVIEW ==========")
+        passageLogger.info("[WEBVIEW] 🧭 navigateInAutomationWebView called with: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.info("[WEBVIEW] Thread: \(Thread.isMainThread ? "Main" : "Background")")
+        
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else { 
+                passageLogger.error("[WEBVIEW] ❌ Self is nil in navigateInAutomationWebView")
+                return 
+            }
+            
+            passageLogger.info("[WEBVIEW] Now on main thread, checking automation webview...")
+            passageLogger.info("[WEBVIEW] Automation webview exists: \(self.automationWebView != nil)")
             
             // Ensure webviews are ready
             guard self.automationWebView != nil else {
-                passageLogger.error("[WEBVIEW] Cannot navigate - automation webview is nil")
+                passageLogger.error("[WEBVIEW] ❌ Cannot navigate - automation webview is nil")
+                passageLogger.error("[WEBVIEW] View loaded: \(self.isViewLoaded)")
+                passageLogger.error("[WEBVIEW] View in window: \(self.view.window != nil)")
                 
                 // If view is loaded, try to setup webviews
                 if self.isViewLoaded && self.view.window != nil {
-                    passageLogger.info("[WEBVIEW] Attempting to setup webviews before navigation")
+                    passageLogger.info("[WEBVIEW] 🔧 Attempting to setup webviews before navigation")
                     self.setupWebViews()
                     
                     // Try again after setup
                     if self.automationWebView != nil {
+                        passageLogger.info("[WEBVIEW] ✅ Webviews set up successfully, retrying navigation")
                         self.navigateInAutomationWebView(url)
                         return
+                    } else {
+                        passageLogger.error("[WEBVIEW] ❌ Failed to setup automation webview")
                     }
+                } else {
+                    passageLogger.error("[WEBVIEW] Cannot setup webviews - view not ready")
                 }
                 return
             }
             
             if let urlObj = URL(string: url) {
-                passageLogger.info("[WEBVIEW] Navigating to: \(passageLogger.truncateUrl(url, maxLength: 100))")
+                passageLogger.info("[WEBVIEW] ✅ URL is valid, proceeding with navigation")
+                passageLogger.info("[WEBVIEW] Automation webview current URL: \(self.automationWebView?.url?.absoluteString ?? "nil")")
+                passageLogger.info("[WEBVIEW] Automation webview is loading: \(self.automationWebView?.isLoading ?? false)")
+                
+                // Store the intended URL before attempting navigation
+                // This helps track what we tried to load even if navigation fails
+                self.intendedAutomationURL = url
+                passageLogger.info("[WEBVIEW] 📝 Stored intended automation URL: \(url)")
                 
                 // Just load the URL directly - let the webview handle any errors
                 let request = URLRequest(url: urlObj)
                 self.automationWebView?.load(request)
+                
+                passageLogger.info("[WEBVIEW] 🎯 AUTOMATION WEBVIEW LOAD REQUESTED!")
+                passageLogger.info("[WEBVIEW] URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+                passageLogger.info("[WEBVIEW] This should trigger WKNavigationDelegate methods")
+            } else {
+                passageLogger.error("[WEBVIEW] ❌ Invalid URL provided: \(url)")
             }
         }
     }
@@ -1761,6 +1993,70 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             // Only call delegate method to avoid duplicate handleClose calls
             // The delegate (PassageSDK) will handle the close logic
             self.delegate?.webViewModalDidClose()
+        }
+    }
+    
+    
+    @objc private func closeButtonTappedWithAnimation() {
+        // Animate button press
+        guard let button = modernCloseButton else { return }
+        
+        UIView.animate(withDuration: 0.1, animations: {
+            button.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
+        }) { _ in
+            UIView.animate(withDuration: 0.1, animations: {
+                button.transform = CGAffineTransform.identity
+            }) { _ in
+                self.closeButtonTapped()
+            }
+        }
+    }
+    
+    @objc private func closeButtonTapped() {
+        passageLogger.info("[WEBVIEW] Close button tapped, requesting close confirmation")
+        
+        // Remember current webview state before showing close confirmation
+        wasShowingAutomationBeforeClose = !isShowingUIWebView
+        
+        // First, ensure UI webview is shown if automation webview is active
+        if !isShowingUIWebView {
+            passageLogger.info("[WEBVIEW] Switching to UI webview before showing close confirmation")
+            showUIWebView()
+        }
+        
+        // Send close confirmation request to NextJS app
+        if let uiWebView = uiWebView {
+            passageLogger.info("[WEBVIEW] Sending close confirmation request to UI webview")
+            
+            // Call the global function directly or fallback to postMessage
+            let script = """
+            try {
+                if (typeof window.showCloseConfirmation === 'function') {
+                    window.showCloseConfirmation();
+                } else if (window.passage && window.passage.postMessage) {
+                    window.passage.postMessage({type: 'CLOSE_CONFIRMATION_REQUEST'});
+                } else {
+                    console.log('No close confirmation handler available');
+                }
+            } catch (error) {
+                console.error('Error calling close confirmation:', error);
+            }
+            """
+            
+            uiWebView.evaluateJavaScript(script, completionHandler: { result, error in
+                if let error = error {
+                    passageLogger.error("[WEBVIEW] Failed to send close confirmation request: \(error)")
+                    // Fallback to direct close
+                    DispatchQueue.main.async {
+                        self.closeModal()
+                    }
+                } else {
+                    passageLogger.debug("[WEBVIEW] Close confirmation request sent successfully")
+                }
+            })
+        } else {
+            passageLogger.warn("[WEBVIEW] UI webview not available, falling back to direct close")
+            closeModal()
         }
     }
     
@@ -1899,6 +2195,11 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             self.isAnimating = true
             self.view.bringSubviewToFront(uiWebView)
             
+            // Ensure header container stays on top BEFORE animation
+            if let headerContainer = self.headerContainer {
+                self.view.bringSubviewToFront(headerContainer)
+            }
+            
             // Prevent automation webview from becoming first responder when UI is visible
             automationWebView.shouldPreventFirstResponder = true
             uiWebView.shouldPreventFirstResponder = false
@@ -1969,6 +2270,11 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             passageLogger.debug("[WEBVIEW] Switching to automation webview")
             self.isAnimating = true
             self.view.bringSubviewToFront(automationWebView)
+            
+            // Ensure header container stays on top BEFORE animation
+            if let headerContainer = self.headerContainer {
+                self.view.bringSubviewToFront(headerContainer)
+            }
             
             // Allow automation webview to become first responder when it's visible
             automationWebView.shouldPreventFirstResponder = false
@@ -2124,13 +2430,23 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             return false
         }
 
-        // Check if automation WebView has a URL (indicates it's been initialized)
-        guard automationWebView.url != nil else {
-            passageLogger.debug("[WEBVIEW] ❌ Automation WebView has no URL")
+        // MODIFIED: Check if automation WebView has a URL OR if it has been attempted to load
+        // Even if navigation failed, we should allow script injection if a load was attempted
+        let hasUrl = automationWebView.url != nil
+        let hasIntendedUrl = intendedAutomationURL != nil
+        
+        passageLogger.debug("[WEBVIEW] Automation WebView URL check:")
+        passageLogger.debug("[WEBVIEW]   - Current URL: \(automationWebView.url?.absoluteString ?? "nil")")
+        passageLogger.debug("[WEBVIEW]   - Intended URL: \(intendedAutomationURL ?? "nil")")
+        passageLogger.debug("[WEBVIEW]   - Has URL: \(hasUrl)")
+        passageLogger.debug("[WEBVIEW]   - Has intended URL: \(hasIntendedUrl)")
+        
+        guard hasUrl || hasIntendedUrl else {
+            passageLogger.debug("[WEBVIEW] ❌ Automation WebView has no URL and no intended URL")
             return false
         }
 
-        passageLogger.debug("[WEBVIEW] ✅ WebViews are ready for script injection")
+        passageLogger.debug("[WEBVIEW] ✅ WebViews are ready for script injection (URL or intended URL exists)")
         return true
     }
 
@@ -2646,14 +2962,53 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     // Set automation webview URL (matches React Native implementation)
     func setAutomationUrl(_ url: String) {
+        passageLogger.info("[WEBVIEW] ========== SET AUTOMATION URL CALLED ==========")
+        passageLogger.info("[WEBVIEW] 🚀 setAutomationUrl called with: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.info("[WEBVIEW] Thread: \(Thread.isMainThread ? "Main" : "Background")")
+        
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else { 
+                passageLogger.error("[WEBVIEW] ❌ Self is nil in setAutomationUrl")
+                return 
+            }
             
-            passageLogger.debug("[WEBVIEW] Setting automation URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+            passageLogger.info("[WEBVIEW] Now on main thread, proceeding with URL setting")
+            passageLogger.info("[WEBVIEW] Automation webview exists: \(self.automationWebView != nil)")
+            
+            if self.automationWebView == nil {
+                passageLogger.error("[WEBVIEW] ❌ CRITICAL: Automation webview is NIL!")
+                passageLogger.error("[WEBVIEW] This means webviews were not set up properly")
+                
+                // Try to setup webviews if view is loaded
+                if self.isViewLoaded && self.view.window != nil {
+                    passageLogger.info("[WEBVIEW] Attempting to setup webviews for automation URL")
+                    self.setupWebViews()
+                    
+                    if self.automationWebView != nil {
+                        passageLogger.info("[WEBVIEW] ✅ Webviews set up successfully, retrying URL load")
+                    } else {
+                        passageLogger.error("[WEBVIEW] ❌ Failed to setup webviews")
+                        return
+                    }
+                } else {
+                    passageLogger.error("[WEBVIEW] Cannot setup webviews - view not ready")
+                    return
+                }
+            }
             
             if let urlObj = URL(string: url) {
+                passageLogger.info("[WEBVIEW] ✅ URL is valid, loading in automation webview")
+                
+                // Store the intended URL before attempting navigation
+                self.intendedAutomationURL = url
+                passageLogger.info("[WEBVIEW] 📝 Stored intended automation URL from setAutomationUrl: \(url)")
+                
                 let request = URLRequest(url: urlObj)
                 self.automationWebView?.load(request)
+                passageLogger.info("[WEBVIEW] 🎯 AUTOMATION WEBVIEW LOAD REQUESTED!")
+                passageLogger.info("[WEBVIEW] This should trigger navigation and give the webview a URL")
+            } else {
+                passageLogger.error("[WEBVIEW] ❌ Invalid URL provided: \(url)")
             }
         }
     }
@@ -2713,8 +3068,16 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         // Add to view hierarchy
         view.addSubview(automationWebView)
         automationWebView.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Ensure header container exists before setting constraints
+        guard let headerContainer = headerContainer else {
+            passageLogger.error("[WEBVIEW] Header container is nil when recreating automation webview")
+            return
+        }
+        
+        // Set constraints to position automation webview BELOW the header container
         NSLayoutConstraint.activate([
-            automationWebView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            automationWebView.topAnchor.constraint(equalTo: headerContainer.bottomAnchor),
             automationWebView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             automationWebView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             automationWebView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
@@ -2722,6 +3085,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         
         // Set initial visibility (automation webview starts hidden)
         automationWebView.alpha = 0
+        
+        // Ensure header container stays on top
+        view.bringSubviewToFront(headerContainer)
         
         passageLogger.info("[WEBVIEW] Automation webview recreated successfully")
     }
@@ -2992,15 +3358,44 @@ extension WebViewModalViewController: WKNavigationDelegate {
         let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
         let nsError = error as NSError
         
-        // Just log the error but don't interfere with navigation
-        passageLogger.warn("Navigation failed but continuing: \(error.localizedDescription)")
-        passageLogger.debug("Error domain: \(nsError.domain), code: \(nsError.code)")
+        passageLogger.error("[NAVIGATION] ❌ \(webViewType) navigation FAILED: \(error.localizedDescription)")
+        passageLogger.error("[NAVIGATION] Error domain: \(nsError.domain), code: \(nsError.code)")
+        
+        // For automation webview navigation failures, this is critical
+        if webViewType == PassageConstants.WebViewTypes.automation {
+            passageLogger.error("[NAVIGATION] ❌ CRITICAL: Automation webview navigation failed!")
+            passageLogger.error("[NAVIGATION] This will cause script injection to fail")
+            passageLogger.error("[NAVIGATION] Error details: \(nsError)")
+            
+            // Check if this is a network connectivity issue
+            if nsError.domain == NSURLErrorDomain {
+                switch nsError.code {
+                case NSURLErrorNotConnectedToInternet:
+                    passageLogger.error("[NAVIGATION] ❌ No internet connection")
+                case NSURLErrorNetworkConnectionLost:
+                    passageLogger.error("[NAVIGATION] ❌ Network connection lost during load")
+                case NSURLErrorTimedOut:
+                    passageLogger.error("[NAVIGATION] ❌ Navigation timed out")
+                case NSURLErrorCannotConnectToHost:
+                    passageLogger.error("[NAVIGATION] ❌ Cannot connect to host")
+                case NSURLErrorDNSLookupFailed:
+                    passageLogger.error("[NAVIGATION] ❌ DNS lookup failed")
+                default:
+                    passageLogger.error("[NAVIGATION] ❌ Other network error: \(nsError.code)")
+                }
+            }
+            
+            // For automation webview, keep the intended URL so scripts can still be injected
+            if intendedAutomationURL != nil {
+                passageLogger.info("[NAVIGATION] 💡 Keeping intended automation URL for script injection")
+                passageLogger.info("[NAVIGATION] Scripts will be injected even though navigation failed")
+            }
+        }
         
         // Handle navigation state change for failed provisional navigation
-        if let url = webView.url?.absoluteString ?? nsError.userInfo["NSErrorFailingURLStringKey"] as? String {
-            handleNavigationStateChange(url: url, loading: false, webViewType: webViewType)
-            passageAnalytics.trackNavigationError(url: url, webViewType: webViewType, error: error.localizedDescription)
-        }
+        let failedUrl = webView.url?.absoluteString ?? nsError.userInfo["NSErrorFailingURLStringKey"] as? String ?? intendedAutomationURL ?? "unknown"
+        handleNavigationStateChange(url: failedUrl, loading: false, webViewType: webViewType)
+        passageAnalytics.trackNavigationError(url: failedUrl, webViewType: webViewType, error: error.localizedDescription)
         
         // Let the webview show whatever it can (error page, cached content, etc.)
         // Don't retry or stop navigation - just let it be
@@ -3182,6 +3577,22 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                         await remoteControl?.captureScreenshotManually()
                     }
                     
+                case "CLOSE_CONFIRMED":
+                    // User confirmed they want to close the modal
+                    passageLogger.info("[WEBVIEW] Close confirmation received - proceeding with close")
+                    DispatchQueue.main.async {
+                        self.closeModal()
+                    }
+                case "CLOSE_CANCELLED":
+                    // User cancelled the close action
+                    passageLogger.info("[WEBVIEW] Close cancelled by user")
+                    // Switch back to automation webview if that's where we were before
+                    if self.wasShowingAutomationBeforeClose {
+                        passageLogger.info("[WEBVIEW] Switching back to automation webview after close cancellation")
+                        self.showAutomationWebView()
+                    }
+                    // Reset the state
+                    self.wasShowingAutomationBeforeClose = false
                 case PassageConstants.MessageTypes.message:
                     // Handle window.passage.postMessage calls
                     if let data = body["data"] {

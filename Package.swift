@@ -24,6 +24,9 @@ let package = Package(
             name: "PassageSDK",
             dependencies: [
                 .product(name: "SocketIO", package: "socket.io-client-swift")
+            ],
+            resources: [
+                .process("Resources")
             ])
     ]
 )

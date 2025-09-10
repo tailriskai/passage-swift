@@ -415,31 +415,42 @@ public class Passage: NSObject {
             let styleString = (presentationStyle == .modal) ? PassageConstants.PresentationStyles.pageSheet : PassageConstants.PresentationStyles.fullScreen
             passageAnalytics.trackModalOpened(presentationStyle: styleString, url: url)
             
-            // Create navigation controller if needed
-            if self.navigationController == nil || self.navigationController?.viewControllers.first !== webVC {
-                passageLogger.info("[SDK] Creating new navigation controller")
-                let navController = UINavigationController(rootViewController: webVC)
-                navController.modalPresentationStyle = presentationStyle.modalPresentationStyle
-                
-                // Enable pull-down dismissal
-                navController.isModalInPresentation = false
-                
-                // Configure sheet presentation (iOS 16+ required)
-                if let sheet = navController.sheetPresentationController {
-                    sheet.detents = [.large()]
-                    sheet.prefersGrabberVisible = true // Always show grabber for pull-down
-                    sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+                // Create navigation controller if needed
+                if self.navigationController == nil || self.navigationController?.viewControllers.first !== webVC {
+                    passageLogger.info("[SDK] Creating new navigation controller")
+                    let navController = UINavigationController(rootViewController: webVC)
+                    navController.modalPresentationStyle = presentationStyle.modalPresentationStyle
+                    
+                    // Disable pull-down dismissal completely
+                    navController.isModalInPresentation = true
+                    
+                    // Configure sheet presentation to disable all drag interactions
+                    if let sheet = navController.sheetPresentationController {
+                        sheet.detents = [.large()]
+                        sheet.prefersGrabberVisible = false // Hide grabber since modal is not dismissible
+                        sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+                        sheet.prefersEdgeAttachedInCompactHeight = true
+                        
+                        // Disable overdrag/rubber band effect completely
+                        if #available(iOS 16.0, *) {
+                            sheet.largestUndimmedDetentIdentifier = .large
+                        }
+                    }
+                    
+                    // Alternative: Use fullScreen for completely rigid modal (uncomment if needed)
+                    // navController.modalPresentationStyle = .fullScreen
+                    
+                    // Set delegate to handle dismissal
+                    navController.presentationController?.delegate = webVC
+                    
+                    self.navigationController = navController
+                } else {
+                    passageLogger.info("[SDK] Reusing existing navigation controller")
+                    // Ensure modal is not dismissible when reusing
+                    self.navigationController?.isModalInPresentation = true
+                    // Ensure delegate is still set when reusing
+                    self.navigationController?.presentationController?.delegate = webVC
                 }
-                
-                // Set delegate to handle dismissal
-                navController.presentationController?.delegate = webVC
-                
-                self.navigationController = navController
-            } else {
-                passageLogger.info("[SDK] Reusing existing navigation controller")
-                // Ensure delegate is still set when reusing
-                self.navigationController?.presentationController?.delegate = webVC
-            }
             
             // Load the new URL
             webVC.loadURL(url)
@@ -753,7 +764,18 @@ public class Passage: NSObject {
         
         // Set configuration callback to handle user agent, integration URL, and global JavaScript (matches React Native)
         remoteControl.setConfigurationCallback { [weak self] userAgent, integrationUrl in
-            passageLogger.debug("[SDK] Configuration updated - userAgent: \(userAgent.isEmpty ? "empty" : "provided (\(userAgent.count) chars)"), integrationUrl: \(integrationUrl ?? "none")")
+            passageLogger.info("[SDK] ========== CONFIGURATION CALLBACK TRIGGERED ==========")
+            passageLogger.info("[SDK] 🔧 Configuration callback called!")
+            passageLogger.info("[SDK] UserAgent: '\(userAgent.isEmpty ? "EMPTY" : userAgent)' (\(userAgent.count) chars)")
+            passageLogger.info("[SDK] IntegrationUrl: '\(integrationUrl ?? "NIL - CRITICAL ISSUE!")'")
+            
+            if integrationUrl == nil {
+                passageLogger.error("[SDK] ❌ CRITICAL: Integration URL is NIL in callback!")
+                passageLogger.error("[SDK] This means automation webview will NEVER load any URL")
+                passageLogger.error("[SDK] Check backend configuration endpoint")
+            } else {
+                passageLogger.info("[SDK] ✅ Integration URL received in callback: \(integrationUrl!)")
+            }
             
             DispatchQueue.main.async {
                 // Update automation webview user agent if provided
@@ -766,11 +788,17 @@ public class Passage: NSObject {
                 
                 // Update automation webview URL if provided
                 if let integrationUrl = integrationUrl {
+                    passageLogger.info("[SDK] 🚀 CALLING setAutomationUrl with: \(integrationUrl)")
                     self?.webViewController?.setAutomationUrl(integrationUrl)
+                    passageLogger.info("[SDK] ✅ setAutomationUrl called successfully")
+                } else {
+                    passageLogger.error("[SDK] ❌ SKIPPING setAutomationUrl - integration URL is nil")
+                    passageLogger.error("[SDK] This is why automation webview has no URL!")
                 }
                 
                 // Update global JavaScript configuration
                 // This will recreate the automation webview if global JavaScript is available
+                passageLogger.info("[SDK] Updating global JavaScript configuration...")
                 self?.webViewController?.updateGlobalJavaScript()
             }
         }
