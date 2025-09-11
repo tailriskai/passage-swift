@@ -77,6 +77,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     // Track webview state before showing close confirmation
     private var wasShowingAutomationBeforeClose: Bool = false
     
+    // Track close button presses to enable double-press close
+    private var closeButtonPressCount: Int = 0
+    
     // Debug: force rendering just one webview with a predefined URL
     private let debugSingleWebViewUrl: String? = nil
         // Force a simple single webview configuration
@@ -152,6 +155,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         passageLogger.info("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
         passageLogger.info("[WEBVIEW] Webview states - UI: \(uiWebView != nil), Automation: \(automationWebView != nil)")
         passageLogger.info("[WEBVIEW] Webview superviews - UI: \(uiWebView?.superview != nil), Automation: \(automationWebView?.superview != nil)")
+        
+        // Reset close button press counter when modal appears
+        closeButtonPressCount = 0
+        passageLogger.debug("[WEBVIEW] Reset close button press counter")
         
         // Re-add notification observers (they were removed in viewWillDisappear)
         setupNotificationObservers()
@@ -1986,6 +1993,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     @objc private func closeModal() {
         passageLogger.debug("Close button tapped, dismissing modal")
         
+        // Reset close button press counter when modal closes
+        closeButtonPressCount = 0
+        
         // Reset URL state immediately when modal closes
         resetURLState()
         
@@ -2013,7 +2023,19 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     }
     
     @objc private func closeButtonTapped() {
-        passageLogger.info("[WEBVIEW] Close button tapped, requesting close confirmation")
+        // Increment close button press counter
+        closeButtonPressCount += 1
+        passageLogger.info("[WEBVIEW] Close button tapped (press #\(closeButtonPressCount))")
+        
+        // If this is the second press, close immediately
+        if closeButtonPressCount >= 2 {
+            passageLogger.info("[WEBVIEW] Second close button press - closing modal immediately")
+            closeModal()
+            return
+        }
+        
+        // First press - show confirmation dialog
+        passageLogger.info("[WEBVIEW] First close button press - requesting close confirmation")
         
         // Remember current webview state before showing close confirmation
         wasShowingAutomationBeforeClose = !isShowingUIWebView
