@@ -1,6 +1,6 @@
 Pod::Spec.new do |spec|
   spec.name         = "PassageSDK"
-  spec.version      = "0.0.36"
+  spec.version      = "0.0.37"
   spec.summary      = "Passage SDK for iOS"
   spec.description  = <<-DESC
     The everywhere API
@@ -25,7 +25,7 @@ Pod::Spec.new do |spec|
   spec.source_files = "Sources/PassageSDK/**/*.{swift,h,m}"
   spec.public_header_files = "Sources/PassageSDK/include/*.h"
 
-  # Platform support
+  # Platform supportn
   spec.ios.deployment_target = "15.1"
   
   # Dependencies
