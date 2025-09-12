@@ -3608,6 +3608,8 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                 case "CLOSE_CANCELLED":
                     // User cancelled the close action
                     passageLogger.info("[WEBVIEW] Close cancelled by user")
+                    // Reset close button press counter when user cancels
+                    self.closeButtonPressCount = 0
                     // Switch back to automation webview if that's where we were before
                     if self.wasShowingAutomationBeforeClose {
                         passageLogger.info("[WEBVIEW] Switching back to automation webview after close cancellation")
