@@ -265,7 +265,7 @@ class ViewController: UIViewController {
     
     // MARK: - API fetch method
     private func fetchIntentToken(completion: @escaping (Result<String, Error>) -> Void) {
-        guard let url = URL(string: "https://api.getpassage.ai/intent-token") else {
+        guard let url = URL(string: "https://api.runpassage.ai/intent-token") else {
             completion(.failure(NSError(domain: "InvalidURL", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
             return
         }

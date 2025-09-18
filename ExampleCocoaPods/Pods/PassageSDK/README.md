@@ -181,8 +181,8 @@ Open `Example/PassageExample.xcodeproj`, build, and run. Provide an intent token
 ## Support
 
 - Open an issue on GitHub
-- Email support@getpassage.ai
-- Visit `https://getpassage.ai`
+- Email support@trypassage.ai
+- Visit `https://trypassage.ai`
 
 ## License
 

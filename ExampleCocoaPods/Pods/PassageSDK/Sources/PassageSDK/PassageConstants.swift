@@ -55,10 +55,10 @@ public enum PassageConstants {
     public enum Defaults {
         public static let modalTitle = ""
         public static let showGrabber = false
-        public static let baseUrl = "https://ui.getpassage.ai"
-        public static let socketUrl = "https://api.getpassage.ai"
+        public static let baseUrl = "https://ui.runpassage.ai"
+        public static let socketUrl = "https://api.runpassage.ai"
         public static let socketNamespace = "/ws"
-        public static let loggerEndpoint = "https://ui.getpassage.ai/api/logger"
+        public static let loggerEndpoint = "https://ui.runpassage.ai/api/logger"
     }
     
     // Error domains
