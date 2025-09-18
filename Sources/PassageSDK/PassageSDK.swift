@@ -922,21 +922,14 @@ public class Passage: NSObject {
         )
         
         passageLogger.info("[SDK] Final success data - history: \(history.count) items, connectionId: \(connectionId)")
-        onConnectionComplete?(successData)
         passageAnalytics.trackOnSuccess(historyCount: history.count, connectionId: connectionId)
-        
-        // Also trigger onDataComplete if we have data
-        if !history.isEmpty {
-            let dataResult = PassageDataResult(
-                data: history.first?.structuredData,
-                prompts: nil // TODO: Add prompt support when implemented
-            )
-            onDataComplete?(dataResult)
-        }
         
         // Mark as closing to prevent duplicate close handling
         isClosing = true
         passageAnalytics.trackModalClosed(reason: "success")
+        
+        // Call onExit before dismissing
+        onExit?("success")
         
         passageLogger.info("[SDK] Dismissing navigation controller from success handler...")
         navigationController?.dismiss(animated: true) { [weak self] in
@@ -964,6 +957,10 @@ public class Passage: NSObject {
         // Mark as closing to prevent duplicate close handling
         isClosing = true
         passageAnalytics.trackModalClosed(reason: "error")
+        
+        // Call onExit before dismissing
+        onExit?("error")
+        
         navigationController?.dismiss(animated: true) {
             // Note: We do NOT call clearWebViewState() here anymore
             // We want to preserve the state (cookies, localStorage) for next session

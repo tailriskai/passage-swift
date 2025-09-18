@@ -1364,11 +1364,21 @@ class RemoteControlManager {
             passageLogger.debug("[SOCKET EVENT] Data complete data: \(data)")
             
             if let eventData = data.first as? [String: Any] {
-                let dataResult = PassageDataResult(
-                    data: eventData["data"],
-                    prompts: eventData["prompts"] as? [[String: Any]]
-                )
-                self?.onDataComplete?(dataResult)
+                // Check if data state allows onDataComplete to be called
+                let status = eventData["status"] as? String
+                passageLogger.debug("[SOCKET EVENT] Data complete status: \(status ?? "nil")")
+                
+                // Only call onDataComplete when data is available or partially available
+                if status == "data_available" || status == "data_partially_available" {
+                    passageLogger.info("[SOCKET EVENT] Status allows onDataComplete - calling callback")
+                    let dataResult = PassageDataResult(
+                        data: eventData["data"],
+                        prompts: eventData["prompts"] as? [[String: Any]]
+                    )
+                    self?.onDataComplete?(dataResult)
+                } else {
+                    passageLogger.info("[SOCKET EVENT] Status '\(status ?? "nil")' does not allow onDataComplete - skipping callback")
+                }
             }
         }
         
@@ -1386,6 +1396,37 @@ class RemoteControlManager {
                     response: eventData["response"]
                 )
                 self?.onPromptComplete?(promptResponse)
+            }
+        }
+        
+        // Handle CONNECTION_SUCCESS events from socket
+        socket?.on("CONNECTION_SUCCESS") { [weak self] data, ack in
+            passageLogger.info("[SOCKET EVENT] 🎉 CONNECTION_SUCCESS event received")
+            passageLogger.debug("[SOCKET EVENT] Connection success data: \(data)")
+            
+            if let eventData = data.first as? [String: Any] {
+                let connections = eventData["connections"] as? [[String: Any]] ?? []
+                let connectionId = eventData["connectionId"] as? String
+                
+                let successData = PassageSuccessData(
+                    history: connections.map { item in
+                        PassageHistoryItem(structuredData: item, additionalData: [:])
+                    },
+                    connectionId: connectionId ?? ""
+                )
+                self?.onSuccess?(successData)
+            }
+        }
+        
+        // Handle CONNECTION_ERROR events from socket
+        socket?.on("CONNECTION_ERROR") { [weak self] data, ack in
+            passageLogger.error("[SOCKET EVENT] ❌ CONNECTION_ERROR event received")
+            passageLogger.error("[SOCKET EVENT] Connection error data: \(data)")
+            
+            if let eventData = data.first as? [String: Any] {
+                let error = eventData["error"] as? String ?? "Unknown error"
+                let errorData = PassageErrorData(error: error, data: eventData)
+                self?.onError?(errorData)
             }
         }
         
@@ -1425,7 +1466,7 @@ class RemoteControlManager {
             
             if let status = connectionData["status"] as? String,
                let progress = connectionData["progress"] as? Int,
-               (status == "connected" || status == "data_available") && progress == 100,
+               (status == "data_available" || status == "data_partially_available") && progress == 100,
                let actualData = connectionData["data"] as? [[String: Any]],
                !actualData.isEmpty {
                 
@@ -1440,15 +1481,13 @@ class RemoteControlManager {
                 passageLogger.info("[SOCKET EVENT]   - Stored \(actualData.count) data items")
                 passageLogger.info("[SOCKET EVENT]   - Connection ID: \(connectionData["id"] as? String ?? "nil")")
                 
-                // Trigger onDataComplete callback immediately when data is available
-                if status == "data_available" {
-                    passageLogger.info("[SOCKET EVENT] Triggering onDataComplete callback with available data")
-                    let dataResult = PassageDataResult(
-                        data: actualData, // Pass all data items
-                        prompts: connectionData["promptResults"] as? [[String: Any]]
-                    )
-                    self?.onDataComplete?(dataResult)
-                }
+                // Trigger onDataComplete callback when data is available
+                passageLogger.info("[SOCKET EVENT] Triggering onDataComplete callback with available data")
+                let dataResult = PassageDataResult(
+                    data: actualData, // Pass all data items
+                    prompts: connectionData["promptResults"] as? [[String: Any]]
+                )
+                self?.onDataComplete?(dataResult)
             } else {
                 // Data storage conditions not met - data will not be available for success callback
                 // This is normal for pending/connecting states
