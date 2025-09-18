@@ -292,6 +292,12 @@ public class Passage: NSObject {
         passageLogger.debug("[SDK:\(instanceId.prefix(8))] Current onExit callback: \(self.onExit != nil ? "exists" : "nil")")
         passageAnalytics.trackOpenRequest(token: token)
         
+        // Auto-configure with default values if not already configured
+        if remoteControl == nil {
+            passageLogger.info("[SDK] RemoteControl not initialized - auto-configuring with default values")
+            configure(PassageConfig())
+        }
+        
         // Reset closing flag for new session - must be done synchronously before storing callbacks
         passageLogger.info("[SDK] Resetting isClosing flag from \(isClosing) to false")
         isClosing = false
