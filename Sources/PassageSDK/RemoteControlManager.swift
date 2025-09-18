@@ -1694,14 +1694,20 @@ class RemoteControlManager {
             }
             
             // Parse data into PassageSuccessData format
-            let history = parseHistory(from: data)
+            let history = parseHistoryFromDoneCommand(from: data)
             let connectionId = (data as? [String: Any])?["connectionId"] as? String ?? ""
+            
+            passageLogger.info("[COMMAND HANDLER] Extracted connectionId: \(connectionId)")
+            passageLogger.info("[COMMAND HANDLER] Parsed \(history.count) history items")
             
             let successData = PassageSuccessData(
                 history: history,
                 connectionId: connectionId
             )
+            
+            passageLogger.info("[COMMAND HANDLER] About to call onSuccess callback")
             onSuccess?(successData)
+            passageLogger.info("[COMMAND HANDLER] onSuccess callback completed")
             
             // Navigate to success URL in UI webview
             let successUrl = buildConnectUrl(success: true)
@@ -1745,6 +1751,26 @@ class RemoteControlManager {
             return PassageHistoryItem(
                 structuredData: structuredData,
                 additionalData: additionalData
+            )
+        }
+    }
+    
+    private func parseHistoryFromDoneCommand(from data: Any?) -> [PassageHistoryItem] {
+        guard let commandData = data as? [String: Any],
+              let historyWrapper = commandData["history"] as? [String: Any],
+              let historyArray = historyWrapper["history"] as? [[String: Any]] else {
+            passageLogger.warn("[COMMAND HANDLER] Failed to parse history from done command data structure")
+            return []
+        }
+        
+        passageLogger.info("[COMMAND HANDLER] Parsed \(historyArray.count) history items from done command")
+        
+        return historyArray.map { item in
+            // The items from done command are already structured data (books, etc.)
+            // No need to extract structuredData property
+            return PassageHistoryItem(
+                structuredData: item,
+                additionalData: [:]
             )
         }
     }
