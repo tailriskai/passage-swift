@@ -1412,7 +1412,8 @@ class RemoteControlManager {
                     history: connections.map { item in
                         PassageHistoryItem(structuredData: item, additionalData: [:])
                     },
-                    connectionId: connectionId ?? ""
+                    connectionId: connectionId ?? "",
+                    data: eventData  // Pass the entire event data
                 )
                 self?.onSuccess?(successData)
             }
@@ -1702,7 +1703,8 @@ class RemoteControlManager {
             
             let successData = PassageSuccessData(
                 history: history,
-                connectionId: connectionId
+                connectionId: connectionId,
+                data: data  // Pass all done command data
             )
             
             passageLogger.info("[COMMAND HANDLER] About to call onSuccess callback")
@@ -1756,23 +1758,40 @@ class RemoteControlManager {
     }
     
     private func parseHistoryFromDoneCommand(from data: Any?) -> [PassageHistoryItem] {
-        guard let commandData = data as? [String: Any],
-              let historyWrapper = commandData["history"] as? [String: Any],
-              let historyArray = historyWrapper["history"] as? [[String: Any]] else {
-            passageLogger.warn("[COMMAND HANDLER] Failed to parse history from done command data structure")
+        guard let commandData = data as? [String: Any] else {
+            passageLogger.warn("[COMMAND HANDLER] Failed to parse command data as dictionary")
             return []
         }
-        
-        passageLogger.info("[COMMAND HANDLER] Parsed \(historyArray.count) history items from done command")
-        
-        return historyArray.map { item in
-            // The items from done command are already structured data (books, etc.)
-            // No need to extract structuredData property
-            return PassageHistoryItem(
-                structuredData: item,
-                additionalData: [:]
-            )
+
+        // Check if history is directly an array (Format 1: data.history = [...])
+        if let historyArray = commandData["history"] as? [[String: Any]] {
+            passageLogger.info("[COMMAND HANDLER] Format 1: Parsed \(historyArray.count) history items from direct array")
+            return historyArray.map { item in
+                return PassageHistoryItem(
+                    structuredData: item,
+                    additionalData: [:]
+                )
+            }
         }
+
+        // Check if history is a nested structure (Format 2: data.history.history = [...])
+        if let historyWrapper = commandData["history"] as? [String: Any],
+           let historyArray = historyWrapper["history"] as? [[String: Any]] {
+            passageLogger.info("[COMMAND HANDLER] Format 2: Parsed \(historyArray.count) history items from nested structure")
+            return historyArray.map { item in
+                return PassageHistoryItem(
+                    structuredData: item,
+                    additionalData: [:]
+                )
+            }
+        }
+
+        passageLogger.warn("[COMMAND HANDLER] Failed to parse history from done command - neither format matched")
+        passageLogger.debug("[COMMAND HANDLER] Command data keys: \(commandData.keys.sorted())")
+        if let history = commandData["history"] {
+            passageLogger.debug("[COMMAND HANDLER] History type: \(type(of: history))")
+        }
+        return []
     }
     
     private func buildConnectUrl(success: Bool, error: String? = nil) -> String {
@@ -2316,7 +2335,8 @@ class RemoteControlManager {
                             history: connectionData.compactMap { item in
                                 PassageHistoryItem(structuredData: item, additionalData: [:])
                             },
-                            connectionId: connectionId
+                            connectionId: connectionId,
+                            data: connectionData  // Pass the raw connection data
                         )
                         onSuccess(successData)
                     }

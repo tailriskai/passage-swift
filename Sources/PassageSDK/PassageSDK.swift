@@ -36,6 +36,13 @@ public struct PassageHistoryItem {
 public struct PassageSuccessData {
     public let history: [PassageHistoryItem]
     public let connectionId: String
+    public let data: Any?
+
+    public init(history: [PassageHistoryItem], connectionId: String, data: Any? = nil) {
+        self.history = history
+        self.connectionId = connectionId
+        self.data = data
+    }
 }
 
 public struct PassageErrorData {
@@ -924,7 +931,8 @@ public class Passage: NSObject {
         
         let successData = PassageSuccessData(
             history: history,
-            connectionId: connectionId
+            connectionId: connectionId,
+            data: data  // Pass the original data from the WebView message
         )
         
         passageLogger.info("[SDK] Final success data - history: \(history.count) items, connectionId: \(connectionId)")
