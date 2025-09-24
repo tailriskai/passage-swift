@@ -34,11 +34,11 @@ public struct PassageHistoryItem {
 }
 
 public struct PassageSuccessData {
-    public let history: [PassageHistoryItem]
+    public let history: [Any]
     public let connectionId: String
     public let data: Any?
 
-    public init(history: [PassageHistoryItem], connectionId: String, data: Any? = nil) {
+    public init(history: [Any], connectionId: String, data: Any? = nil) {
         self.history = history
         self.connectionId = connectionId
         self.data = data
@@ -903,19 +903,14 @@ public class Passage: NSObject {
         passageLogger.debug("[SDK]   - Data array count: \(storedData?.data?.count ?? 0)")
         passageLogger.debug("[SDK]   - Connection ID: \(storedData?.connectionId ?? "nil")")
         
-        var history: [PassageHistoryItem] = []
+        var history: [Any] = []
         var connectionId = ""
         
         if let actualData = storedData?.data, !actualData.isEmpty {
             // Use the actual Netflix data from connection event
             passageLogger.info("[SDK] ✅ Using stored connection data with \(actualData.count) items")
             
-            history = actualData.map { item in
-                PassageHistoryItem(
-                    structuredData: item,
-                    additionalData: [:]
-                )
-            }
+            history = actualData
             
             connectionId = storedData?.connectionId ?? ""
             passageLogger.info("[SDK] Using stored connection ID: \(connectionId)")
@@ -1025,19 +1020,10 @@ public class Passage: NSObject {
         onWebviewChange?(webviewType)
     }
     
-    private func parseHistory(from data: Any?) -> [PassageHistoryItem] {
+    private func parseHistory(from data: Any?) -> [Any] {
         guard let historyArray = data as? [[String: Any]] else { return [] }
-        
-        return historyArray.map { item in
-            let structuredData = item["structuredData"]
-            var additionalData = item
-            additionalData.removeValue(forKey: "structuredData")
-            
-            return PassageHistoryItem(
-                structuredData: structuredData,
-                additionalData: additionalData
-            )
-        }
+
+        return historyArray
     }
     
     private func cleanupAfterClose() {

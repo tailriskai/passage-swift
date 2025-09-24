@@ -1409,9 +1409,7 @@ class RemoteControlManager {
                 let connectionId = eventData["connectionId"] as? String
                 
                 let successData = PassageSuccessData(
-                    history: connections.map { item in
-                        PassageHistoryItem(structuredData: item, additionalData: [:])
-                    },
+                    history: connections,
                     connectionId: connectionId ?? "",
                     data: eventData  // Pass the entire event data
                 )
@@ -1739,25 +1737,16 @@ class RemoteControlManager {
         }
     }
     
-    private func parseHistory(from data: Any?) -> [PassageHistoryItem] {
+    private func parseHistory(from data: Any?) -> [Any] {
         guard let historyData = data as? [String: Any],
               let historyArray = historyData["history"] as? [[String: Any]] else {
             return []
         }
-        
-        return historyArray.map { item in
-            let structuredData = item["structuredData"]
-            var additionalData = item
-            additionalData.removeValue(forKey: "structuredData")
-            
-            return PassageHistoryItem(
-                structuredData: structuredData,
-                additionalData: additionalData
-            )
-        }
+
+        return historyArray
     }
     
-    private func parseHistoryFromDoneCommand(from data: Any?) -> [PassageHistoryItem] {
+    private func parseHistoryFromDoneCommand(from data: Any?) -> [Any] {
         guard let commandData = data as? [String: Any] else {
             passageLogger.warn("[COMMAND HANDLER] Failed to parse command data as dictionary")
             return []
@@ -1766,24 +1755,14 @@ class RemoteControlManager {
         // Check if history is directly an array (Format 1: data.history = [...])
         if let historyArray = commandData["history"] as? [[String: Any]] {
             passageLogger.info("[COMMAND HANDLER] Format 1: Parsed \(historyArray.count) history items from direct array")
-            return historyArray.map { item in
-                return PassageHistoryItem(
-                    structuredData: item,
-                    additionalData: [:]
-                )
-            }
+            return historyArray
         }
 
         // Check if history is a nested structure (Format 2: data.history.history = [...])
         if let historyWrapper = commandData["history"] as? [String: Any],
            let historyArray = historyWrapper["history"] as? [[String: Any]] {
             passageLogger.info("[COMMAND HANDLER] Format 2: Parsed \(historyArray.count) history items from nested structure")
-            return historyArray.map { item in
-                return PassageHistoryItem(
-                    structuredData: item,
-                    additionalData: [:]
-                )
-            }
+            return historyArray
         }
 
         passageLogger.warn("[COMMAND HANDLER] Failed to parse history from done command - neither format matched")
@@ -2332,9 +2311,7 @@ class RemoteControlManager {
                        let connectionData = self.connectionData,
                        let connectionId = self.connectionId {
                         let successData = PassageSuccessData(
-                            history: connectionData.compactMap { item in
-                                PassageHistoryItem(structuredData: item, additionalData: [:])
-                            },
+                            history: connectionData,
                             connectionId: connectionId,
                             data: connectionData  // Pass the raw connection data
                         )
