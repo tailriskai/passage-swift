@@ -70,6 +70,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     // Reference to modern close button for animations
     private var modernCloseButton: UIView?
+
+    // Reference to back button for visibility management
+    private var backButton: UIView?
     
     // Header container that stays above webviews
     private var headerContainer: UIView?
@@ -79,6 +82,12 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     
     // Track close button presses to enable double-press close
     private var closeButtonPressCount: Int = 0
+
+    // Track if navigation was triggered by back button (to skip backend tracking)
+    private var isNavigatingFromBackButton: Bool = false
+
+    // Track if back navigation should be disabled (after programmatic navigate command)
+    private var isBackNavigationDisabled: Bool = false
     
     // Debug: force rendering just one webview with a predefined URL
     private let debugSingleWebViewUrl: String? = nil
@@ -340,7 +349,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     @objc private func navigateInAutomationNotification(_ notification: Notification) {
         passageLogger.info("[WEBVIEW] ========== NAVIGATE IN AUTOMATION NOTIFICATION ==========")
         passageLogger.info("[WEBVIEW] 📡 Received navigateInAutomation notification")
-        
+
         guard let url = notification.userInfo?["url"] as? String else {
             passageLogger.error("[WEBVIEW] ❌ Navigate notification missing URL")
             passageLogger.error("[WEBVIEW] Available userInfo keys: \(notification.userInfo?.keys.map { "\($0)" } ?? [])")
@@ -349,6 +358,20 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         let commandId = notification.userInfo?["commandId"] as? String
         passageLogger.info("[WEBVIEW] ✅ Navigate URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
         passageLogger.info("[WEBVIEW] Command ID: \(commandId ?? "nil")")
+
+        // Check if we're already on this URL - if so, return success immediately
+        if let currentURL = automationWebView?.url?.absoluteString, currentURL == url {
+            passageLogger.info("[WEBVIEW] ✅ Already on target URL, returning success without navigating")
+
+            // Notify remote control of successful navigation (even though we didn't actually navigate)
+            remoteControl?.checkNavigationEnd(url)
+
+            return
+        }
+
+        // Clear navigation history and disable back button for this programmatic navigation
+        clearAutomationNavigationHistory()
+
         passageLogger.info("[WEBVIEW] 🚀 Calling navigateInAutomationWebView...")
         navigateInAutomationWebView(url)
     }
@@ -1072,6 +1095,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         if let header = headerContainer {
             view.bringSubviewToFront(header)
         }
+
+        // Update back button visibility when webviews are ready
+        updateBackButtonVisibility()
     }
     
     private func createHeaderContainer() {
@@ -1095,6 +1121,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         
         // Add header elements to the container
         addLogoToContainer(container)
+        addBackButtonToContainer(container)
         addCloseButtonToContainer(container)
         addHeaderBorderToContainer(container)
         
@@ -1205,6 +1232,36 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         passageLogger.debug("[WEBVIEW] Logo hidden - skipping logo creation")
     }
     
+    private func addBackButtonToContainer(_ container: UIView) {
+        // Create back button for placement in header container
+        let backButton = UILabel()
+        backButton.text = "←"
+        backButton.font = UIFont.systemFont(ofSize: 32, weight: .light)
+        backButton.textColor = UIColor.black
+        backButton.textAlignment = .center
+        backButton.backgroundColor = UIColor.clear
+        backButton.isUserInteractionEnabled = true
+        backButton.alpha = 0 // Initially hidden
+
+        container.addSubview(backButton)
+        backButton.translatesAutoresizingMaskIntoConstraints = false
+
+        // Position in header container's safe area portion (left side, mirroring close button)
+        NSLayoutConstraint.activate([
+            backButton.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 4),
+            backButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            backButton.widthAnchor.constraint(equalToConstant: 48),
+            backButton.heightAnchor.constraint(equalToConstant: 48)
+        ])
+
+        // Add tap gesture with animation
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(backButtonTappedWithAnimation))
+        backButton.addGestureRecognizer(tapGesture)
+
+        // Store reference for visibility management
+        self.backButton = backButton
+    }
+
     private func addCloseButtonToContainer(_ container: UIView) {
         // Create close button for placement in header container
         let closeButton = UILabel()
@@ -1214,10 +1271,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         closeButton.textAlignment = .center
         closeButton.backgroundColor = UIColor.clear
         closeButton.isUserInteractionEnabled = true
-        
+
         container.addSubview(closeButton)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
-        
+
         // Position in header container's safe area portion
         NSLayoutConstraint.activate([
             closeButton.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 4),
@@ -1225,11 +1282,11 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             closeButton.widthAnchor.constraint(equalToConstant: 48),
             closeButton.heightAnchor.constraint(equalToConstant: 48)
         ])
-        
+
         // Add tap gesture with animation
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(closeButtonTappedWithAnimation))
         closeButton.addGestureRecognizer(tapGesture)
-        
+
         // Store reference for animation
         self.modernCloseButton = closeButton
     }
@@ -2010,7 +2067,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     @objc private func closeButtonTappedWithAnimation() {
         // Animate button press
         guard let button = modernCloseButton else { return }
-        
+
         UIView.animate(withDuration: 0.1, animations: {
             button.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
         }) { _ in
@@ -2018,6 +2075,92 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 button.transform = CGAffineTransform.identity
             }) { _ in
                 self.closeButtonTapped()
+            }
+        }
+    }
+
+    @objc private func backButtonTappedWithAnimation() {
+        // Animate button press
+        guard let button = backButton else { return }
+
+        UIView.animate(withDuration: 0.1, animations: {
+            button.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
+        }) { _ in
+            UIView.animate(withDuration: 0.1, animations: {
+                button.transform = CGAffineTransform.identity
+            }) { _ in
+                self.backButtonTapped()
+            }
+        }
+    }
+
+    @objc private func backButtonTapped() {
+        passageLogger.info("[WEBVIEW] Back button tapped")
+
+        // Check if back navigation is disabled
+        if isBackNavigationDisabled {
+            passageLogger.debug("[WEBVIEW] Back navigation is disabled - ignoring tap")
+            return
+        }
+
+        // Only navigate back in automation webview if it can go back
+        guard let automationWebView = automationWebView, automationWebView.canGoBack else {
+            passageLogger.debug("[WEBVIEW] Cannot go back - no history")
+            return
+        }
+
+        // Set flag to indicate this navigation is from back button
+        isNavigatingFromBackButton = true
+        passageLogger.debug("[WEBVIEW] Set isNavigatingFromBackButton flag - backend tracking will be skipped")
+
+        // Navigate back
+        DispatchQueue.main.async { [weak self] in
+            automationWebView.goBack()
+            passageLogger.debug("[WEBVIEW] Automation webview navigating back")
+
+            // Update back button visibility after navigation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self?.updateBackButtonVisibility()
+            }
+        }
+    }
+
+    private func updateBackButtonVisibility() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let backButton = self.backButton else { return }
+
+            // Show back button only if automation webview can go back AND back navigation is not disabled
+            let canGoBack = (self.automationWebView?.canGoBack ?? false) && !self.isBackNavigationDisabled
+            let targetAlpha: CGFloat = canGoBack ? 1.0 : 0.0
+
+            // Only animate if visibility is actually changing
+            if backButton.alpha != targetAlpha {
+                UIView.animate(withDuration: 0.2) {
+                    backButton.alpha = targetAlpha
+                }
+                passageLogger.debug("[WEBVIEW] Back button visibility updated: \(canGoBack ? "visible" : "hidden")")
+            }
+        }
+    }
+
+    private func clearAutomationNavigationHistory() {
+        passageLogger.info("[WEBVIEW] Clearing automation webview navigation history")
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let automationWebView = self.automationWebView else { return }
+
+            // Disable back navigation until next user-initiated navigation
+            self.isBackNavigationDisabled = true
+            passageLogger.debug("[WEBVIEW] Back navigation disabled")
+
+            // Hide back button immediately
+            self.updateBackButtonVisibility()
+
+            // Clear back/forward history by loading about:blank and then the actual URL
+            // The actual URL will be loaded by navigateInAutomationWebView after this
+            if automationWebView.canGoBack {
+                automationWebView.loadHTMLString("", baseURL: nil)
+                passageLogger.debug("[WEBVIEW] Cleared automation webview history")
             }
         }
     }
@@ -3117,30 +3260,51 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     // Handle navigation state changes (like React Native implementation)
     private func handleNavigationStateChange(url: String, loading: Bool, webViewType: String) {
         passageLogger.debug("[NAVIGATION] State change - \(webViewType): \(passageLogger.truncateUrl(url, maxLength: 100)), loading: \(loading)")
-        
+
         // Only send browser state for automation webview
         if webViewType == PassageConstants.WebViewTypes.automation && !url.isEmpty {
             if loading {
-                // Send browser state on navigation start - only include fields defined in BrowserStateRequestDto
-                let browserStateData: [String: Any] = [
-                    "url": url
-                    // Only url is sent - other fields (html, localStorage, sessionStorage, cookies, screenshot) 
-                    // are captured separately when needed
-                ]
-                
-                NotificationCenter.default.post(
-                    name: .sendBrowserState,
-                    object: nil,
-                    userInfo: browserStateData
-                )
-                
-                passageLogger.debug("[NAVIGATION] Page starting to load for automation webview, sent browser state")
+                // Skip backend tracking if navigation was triggered by back button
+                if isNavigatingFromBackButton {
+                    passageLogger.debug("[NAVIGATION] Skipping browser state send - navigation triggered by back button")
+                    // Don't send browser state for back button navigations
+                } else {
+                    // Send browser state on navigation start - only include fields defined in BrowserStateRequestDto
+                    let browserStateData: [String: Any] = [
+                        "url": url
+                        // Only url is sent - other fields (html, localStorage, sessionStorage, cookies, screenshot)
+                        // are captured separately when needed
+                    ]
+
+                    NotificationCenter.default.post(
+                        name: .sendBrowserState,
+                        object: nil,
+                        userInfo: browserStateData
+                    )
+
+                    passageLogger.debug("[NAVIGATION] Page starting to load for automation webview, sent browser state")
+                }
             } else {
+                // Reset back button navigation flag when navigation completes
+                if isNavigatingFromBackButton {
+                    passageLogger.debug("[NAVIGATION] Back button navigation completed, resetting flag")
+                    isNavigatingFromBackButton = false
+                }
+
+                // Re-enable back navigation after first navigation completes (from programmatic navigate)
+                if isBackNavigationDisabled {
+                    passageLogger.debug("[NAVIGATION] Re-enabling back navigation after programmatic navigate completed")
+                    isBackNavigationDisabled = false
+                }
+
                 // Handle injectScript command reinjection for record mode when loading is complete
                 // Call handleNavigationComplete directly (matches React Native implementation)
                 remoteControl?.handleNavigationComplete(url)
-                
+
                 passageLogger.debug("[NAVIGATION] Page loaded for automation webview, checking for reinjection")
+
+                // Update back button visibility after navigation completes
+                updateBackButtonVisibility()
             }
         }
     }
