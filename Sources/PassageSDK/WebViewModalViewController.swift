@@ -1236,7 +1236,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         // Create back button for placement in header container
         let backButton = UILabel()
         backButton.text = "←"
-        backButton.font = UIFont.systemFont(ofSize: 32, weight: .light)
+        backButton.font = UIFont.systemFont(ofSize: 26, weight: .light) // 32 * 0.8 = 25.6 ≈ 26
         backButton.textColor = UIColor.black
         backButton.textAlignment = .center
         backButton.backgroundColor = UIColor.clear
@@ -2129,16 +2129,22 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let backButton = self.backButton else { return }
 
-            // Show back button only if automation webview can go back AND back navigation is not disabled
-            let canGoBack = (self.automationWebView?.canGoBack ?? false) && !self.isBackNavigationDisabled
-            let targetAlpha: CGFloat = canGoBack ? 1.0 : 0.0
+            // Show back button only if:
+            // 1. Automation webview is currently visible (not UI webview)
+            // 2. Automation webview has navigation history
+            // 3. Back navigation is not disabled
+            let isAutomationVisible = !self.isShowingUIWebView
+            let hasHistory = self.automationWebView?.canGoBack ?? false
+            let isEnabled = !self.isBackNavigationDisabled
+            let shouldShow = isAutomationVisible && hasHistory && isEnabled
+            let targetAlpha: CGFloat = shouldShow ? 1.0 : 0.0
 
             // Only animate if visibility is actually changing
             if backButton.alpha != targetAlpha {
                 UIView.animate(withDuration: 0.2) {
                     backButton.alpha = targetAlpha
                 }
-                passageLogger.debug("[WEBVIEW] Back button visibility updated: \(canGoBack ? "visible" : "hidden")")
+                passageLogger.debug("[WEBVIEW] Back button visibility updated: \(shouldShow ? "visible" : "hidden") (automation visible: \(isAutomationVisible), has history: \(hasHistory), enabled: \(isEnabled))")
             }
         }
     }
@@ -2353,6 +2359,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 self.view.bringSubviewToFront(uiWebView)
                 uiWebView.alpha = 1
                 automationWebView.alpha = 0
+                // Ensure back button is hidden when UI webview is already showing
+                self.updateBackButtonVisibility()
                 return
             }
 
@@ -2376,7 +2384,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 self.isAnimating = false
                 self.isShowingUIWebView = true
                 self.onWebviewChange?("ui")
-                
+
+                // Hide back button when UI webview is visible
+                self.updateBackButtonVisibility()
+
                 // Any keyboard that might be showing will be automatically dismissed by keyboard notifications
             })
         }
@@ -2429,6 +2440,8 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 self.view.bringSubviewToFront(automationWebView)
                 automationWebView.alpha = 1
                 uiWebView.alpha = 0
+                // Update back button visibility when automation webview is already showing
+                self.updateBackButtonVisibility()
                 return
             }
 
@@ -2452,6 +2465,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                 self.isAnimating = false
                 self.isShowingUIWebView = false
                 self.onWebviewChange?("automation")
+
+                // Update back button visibility when automation webview becomes visible
+                self.updateBackButtonVisibility()
             })
         }
     }
