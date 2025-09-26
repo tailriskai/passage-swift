@@ -126,10 +126,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         setupScreenshotAccessors()
         
         setupUI()
-        
+
         // Don't set up notification observers here - do it in viewDidAppear
         // to avoid duplicate observers from reused view controllers
-        
+
         // Hide navigation bar since we're using custom header
         navigationController?.setNavigationBarHidden(true, animated: false)
         
@@ -244,7 +244,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     private func setupUI() {
         // Set background color to white to match navigation bar
         view.backgroundColor = UIColor.white
-        
+
         // No close button - modal should be dismissed via swipe down or programmatically
     }
     
@@ -916,7 +916,15 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         webView.scrollView.minimumZoomScale = 1.0
         webView.scrollView.maximumZoomScale = 1.0
         webView.scrollView.bouncesZoom = false
-        
+
+        // Enable back/forward navigation gestures for automation webview only
+        if webViewType == PassageConstants.WebViewTypes.automation {
+            webView.allowsBackForwardNavigationGestures = true
+            passageLogger.debug("[WEBVIEW] Enabled back/forward navigation gestures for automation webview")
+        } else {
+            webView.allowsBackForwardNavigationGestures = false
+        }
+
         // Enable Safari debugging
         if #available(iOS 16.4, *) {
             webView.isInspectable = true
@@ -2145,6 +2153,16 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                     backButton.alpha = targetAlpha
                 }
                 passageLogger.debug("[WEBVIEW] Back button visibility updated: \(shouldShow ? "visible" : "hidden") (automation visible: \(isAutomationVisible), has history: \(hasHistory), enabled: \(isEnabled))")
+            }
+
+            // Enable/disable built-in back swipe gesture based on same conditions
+            if let automationWebView = self.automationWebView {
+                let wasEnabled = automationWebView.allowsBackForwardNavigationGestures
+                automationWebView.allowsBackForwardNavigationGestures = shouldShow
+
+                if wasEnabled != shouldShow {
+                    passageLogger.debug("[WEBVIEW] Built-in back swipe gesture \(shouldShow ? "enabled" : "disabled")")
+                }
             }
         }
     }
