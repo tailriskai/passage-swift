@@ -1,6 +1,0 @@
-framework module PassageSDK {
-  umbrella header "PassageSDK-umbrella.h"
-
-  export *
-  module * { export * }
-}
