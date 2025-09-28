@@ -515,7 +515,19 @@ class RemoteControlManager {
         // Use configuration parameters instead of JWT parameters
         return configImageOptimization
     }
-    
+
+    func getIntentToken() -> String? {
+        return intentToken
+    }
+
+    func getBaseUrl() -> String {
+        return config.uiUrl
+    }
+
+    func getApiUrl() -> String {
+        return config.apiUrl
+    }
+
     private func extractCaptureScreenshotFlag(from token: String) -> Bool {
         passageLogger.debug("[JWT DECODE] Extracting captureScreenshot flag from token")
         let components = token.components(separatedBy: ".")
@@ -1774,7 +1786,7 @@ class RemoteControlManager {
     }
     
     private func buildConnectUrl(success: Bool, error: String? = nil) -> String {
-        var components = URLComponents(string: "\(config.baseUrl)\(PassageConstants.Paths.connect)")!
+        var components = URLComponents(string: "\(config.uiUrl)\(PassageConstants.Paths.connect)")!
         var queryItems = [
             URLQueryItem(name: "intentToken", value: intentToken ?? ""),
             URLQueryItem(name: "success", value: success.description),

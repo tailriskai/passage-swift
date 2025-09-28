@@ -7,12 +7,37 @@ import WebKit
 // MARK: - Public Types
 
 public struct PassageConfig {
-    public let baseUrl: String
+    public let uiUrl: String
+    public let apiUrl: String
     public let socketUrl: String
     public let socketNamespace: String
     public let debug: Bool
     public let agentName: String
-    
+
+    // Deprecated: use uiUrl instead
+    @available(*, deprecated, renamed: "uiUrl", message: "Use uiUrl instead of baseUrl")
+    public var baseUrl: String {
+        return uiUrl
+    }
+
+    public init(
+        uiUrl: String? = nil,
+        apiUrl: String? = nil,
+        socketUrl: String? = nil,
+        socketNamespace: String? = nil,
+        debug: Bool = false,
+        agentName: String? = nil
+    ) {
+        self.uiUrl = uiUrl ?? PassageConstants.Defaults.uiUrl
+        self.apiUrl = apiUrl ?? PassageConstants.Defaults.apiUrl
+        self.socketUrl = socketUrl ?? PassageConstants.Defaults.socketUrl
+        self.socketNamespace = socketNamespace ?? PassageConstants.Defaults.socketNamespace
+        self.debug = debug
+        self.agentName = agentName ?? PassageConstants.Defaults.agentName
+    }
+
+    // Backward compatibility initializer
+    @available(*, deprecated, message: "Use init(uiUrl:apiUrl:) instead")
     public init(
         baseUrl: String? = nil,
         socketUrl: String? = nil,
@@ -20,7 +45,8 @@ public struct PassageConfig {
         debug: Bool = false,
         agentName: String? = nil
     ) {
-        self.baseUrl = baseUrl ?? PassageConstants.Defaults.baseUrl
+        self.uiUrl = baseUrl ?? PassageConstants.Defaults.uiUrl
+        self.apiUrl = PassageConstants.Defaults.apiUrl
         self.socketUrl = socketUrl ?? PassageConstants.Defaults.socketUrl
         self.socketNamespace = socketNamespace ?? PassageConstants.Defaults.socketNamespace
         self.debug = debug
@@ -233,14 +259,16 @@ public class Passage: NSObject {
         passageAnalytics.configure(.default, sdkVersion: sdkVersion)
         passageAnalytics.trackConfigureStart()
         passageLogger.debugMethod("configure", params: [
-            "baseUrl": config.baseUrl,
+            "uiUrl": config.uiUrl,
+            "apiUrl": config.apiUrl,
             "socketUrl": config.socketUrl,
             "socketNamespace": config.socketNamespace,
             "debug": config.debug,
             "sdkVersion": sdkVersion
         ])
         passageAnalytics.trackConfigureSuccess(config: [
-            "baseUrl": config.baseUrl,
+            "uiUrl": config.uiUrl,
+            "apiUrl": config.apiUrl,
             "socketUrl": config.socketUrl,
             "socketNamespace": config.socketNamespace,
             "debug": config.debug
@@ -735,8 +763,8 @@ public class Passage: NSObject {
     // MARK: - Private Methods
     
     private func buildUrlFromToken(_ token: String) -> String {
-        let baseUrl = config.baseUrl
-        let urlString = "\(baseUrl)\(PassageConstants.Paths.connect)"
+        let uiUrl = config.uiUrl
+        let urlString = "\(uiUrl)\(PassageConstants.Paths.connect)"
         
         guard let url = URL(string: urlString) else {
             passageLogger.error("[SDK] Failed to create URL from: \(urlString)")
@@ -1284,7 +1312,7 @@ public class PassageCore {
         // Update analytics configuration
         analytics.configure(.default, sdkVersion: sdkVersion)
         
-        passageLogger.info("[SDK] PassageCore configured - baseUrl: \(config.baseUrl)")
+        passageLogger.info("[SDK] PassageCore configured - uiUrl: \(config.uiUrl), apiUrl: \(config.apiUrl)")
     }
     
     public var sdkVersion: String {

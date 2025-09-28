@@ -51,14 +51,15 @@ class ViewController: UIViewController {
 
         // Configure Passage SDK with debug mode
         let config = PassageConfig(
-            baseUrl: "http://localhost:3001",
+            uiUrl: "http://localhost:3001",
+            apiUrl: "http://localhost:3000",
             socketUrl: "http://localhost:3000",
-            debug: true,
-
+            debug: true
         )
 
         print("Configuring SDK with:")
-        print("  - Base URL: \(config.baseUrl)")
+        print("  - UI URL: \(config.uiUrl)")
+        print("  - API URL: \(config.apiUrl)")
         print("  - Socket URL: \(config.socketUrl)")
         print("  - Socket Namespace: \(config.socketNamespace)")
         print("  - Debug: \(config.debug)")

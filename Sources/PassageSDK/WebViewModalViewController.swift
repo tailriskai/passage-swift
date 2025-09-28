@@ -1581,6 +1581,34 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                   } catch (error) {
                     console.error('[Passage] Error capturing screenshot:', error);
                   }
+                },
+
+                // Send data to backend via native bridge (bypasses CSP restrictions)
+                sendToBackend: function(apiPath, data, headers) {
+                  console.log('[Passage] sendToBackend called with apiPath:', apiPath);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      const message = {
+                        type: 'sendToBackend',
+                        apiPath: apiPath,
+                        data: data,
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      };
+
+                      // Add headers if provided
+                      if (headers) {
+                        message.headers = headers;
+                      }
+
+                      window.webkit.messageHandlers.passageWebView.postMessage(message);
+                      console.log('[Passage] sendToBackend request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for sendToBackend');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error in sendToBackend:', error);
+                  }
                 }
               };
               
@@ -1763,9 +1791,37 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
                   } catch (error) {
                     console.error('[Passage] Error capturing screenshot:', error);
                   }
+                },
+
+                // Send data to backend via native bridge (bypasses CSP restrictions)
+                sendToBackend: function(apiPath, data, headers) {
+                  console.log('[Passage] sendToBackend called with apiPath:', apiPath);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      const message = {
+                        type: 'sendToBackend',
+                        apiPath: apiPath,
+                        data: data,
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      };
+
+                      // Add headers if provided
+                      if (headers) {
+                        message.headers = headers;
+                      }
+
+                      window.webkit.messageHandlers.passageWebView.postMessage(message);
+                      console.log('[Passage] sendToBackend request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for sendToBackend');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error in sendToBackend:', error);
+                  }
                 }
               };
-              
+
               // Monitor client-side navigation events (same as automation)
               (function() {
                 // Monitor History API
@@ -2780,7 +2836,98 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             }
         }
     }
-    
+
+    // MARK: - Native HTTP Request Support
+
+    /// Send data to backend via native HTTP request (bypasses CSP restrictions)
+    /// - Parameters:
+    ///   - apiPath: API path to append to base URL (e.g., "/network/intercept")
+    ///   - data: Data to send as JSON body
+    ///   - headers: Optional custom headers to include in the request
+    ///   - completion: Completion handler with success status and optional error message
+    private func sendToBackend(apiPath: String, data: Any, headers: [String: String]? = nil, completion: @escaping (Bool, String?) -> Void) {
+        passageLogger.info("[SEND_TO_BACKEND] ========== SENDING DATA TO BACKEND ==========")
+        passageLogger.info("[SEND_TO_BACKEND] API Path: \(apiPath)")
+
+        // Get base URL from remote control config
+        guard let remoteControl = remoteControl else {
+            passageLogger.error("[SEND_TO_BACKEND] ❌ No remote control available")
+            completion(false, "No remote control available")
+            return
+        }
+
+        // Construct full URL
+        let baseUrl = remoteControl.getApiUrl().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let fullUrlString = baseUrl + apiPath
+
+        guard let url = URL(string: fullUrlString) else {
+            passageLogger.error("[SEND_TO_BACKEND] ❌ Invalid URL: \(fullUrlString)")
+            completion(false, "Invalid URL")
+            return
+        }
+
+        passageLogger.info("[SEND_TO_BACKEND] Full URL: \(fullUrlString)")
+
+        // Convert data to JSON
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: data, options: []) else {
+            passageLogger.error("[SEND_TO_BACKEND] ❌ Failed to serialize data to JSON")
+            completion(false, "Failed to serialize data")
+            return
+        }
+
+        passageLogger.debug("[SEND_TO_BACKEND] JSON payload size: \(jsonData.count) bytes")
+
+        // Create request
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        request.timeoutInterval = 30.0
+
+        // Add custom headers from JavaScript (if provided)
+        if let headers = headers {
+            for (key, value) in headers {
+                request.setValue(value, forHTTPHeaderField: key)
+                passageLogger.debug("[SEND_TO_BACKEND] Added custom header: \(key)")
+            }
+        }
+
+        // Add intent token header if available (and not already provided in custom headers)
+        if headers?["x-intent-token"] == nil, let intentToken = remoteControl.getIntentToken() {
+            request.setValue(intentToken, forHTTPHeaderField: "x-intent-token")
+            passageLogger.debug("[SEND_TO_BACKEND] Added x-intent-token header from remote control")
+        }
+
+        // Send request using URLSession
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                passageLogger.error("[SEND_TO_BACKEND] ❌ Request failed: \(error.localizedDescription)")
+                completion(false, error.localizedDescription)
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                passageLogger.error("[SEND_TO_BACKEND] ❌ Invalid response type")
+                completion(false, "Invalid response")
+                return
+            }
+
+            passageLogger.info("[SEND_TO_BACKEND] Response status: \(httpResponse.statusCode)")
+
+            if (200...299).contains(httpResponse.statusCode) {
+                passageLogger.info("[SEND_TO_BACKEND] ✅ Request succeeded")
+                completion(true, nil)
+            } else {
+                let errorMessage = "HTTP \(httpResponse.statusCode)"
+                passageLogger.error("[SEND_TO_BACKEND] ❌ Request failed with status: \(errorMessage)")
+                completion(false, errorMessage)
+            }
+        }
+
+        task.resume()
+        passageLogger.debug("[SEND_TO_BACKEND] Request sent")
+    }
+
     // MARK: - Screenshot Support (matching React Native implementation)
     
     // Structure to hold optimized image data with base64 string
@@ -3791,10 +3938,41 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                 case "captureScreenshot":
                     // Handle window.passage.captureScreenshot calls
                     passageLogger.info("[WEBVIEW] Manual screenshot capture requested from \(webViewType) webview")
-                    
+
                     // Trigger screenshot capture via remote control
                     Task {
                         await remoteControl?.captureScreenshotManually()
+                    }
+
+                case "sendToBackend":
+                    // Handle window.passage.sendToBackend calls
+                    passageLogger.info("[WEBVIEW] sendToBackend called from \(webViewType) webview")
+
+                    guard let apiPath = body["apiPath"] as? String else {
+                        passageLogger.error("[WEBVIEW] sendToBackend missing apiPath parameter")
+                        return
+                    }
+
+                    guard let data = body["data"] else {
+                        passageLogger.error("[WEBVIEW] sendToBackend missing data parameter")
+                        return
+                    }
+
+                    // Extract optional headers from the message
+                    let headers = body["headers"] as? [String: String]
+
+                    passageLogger.debug("[WEBVIEW] sendToBackend - apiPath: \(apiPath)")
+                    if let headers = headers {
+                        passageLogger.debug("[WEBVIEW] sendToBackend - headers: \(headers.keys.joined(separator: ", "))")
+                    }
+
+                    // Send data to backend via native HTTP request
+                    sendToBackend(apiPath: apiPath, data: data, headers: headers) { success, error in
+                        if let error = error {
+                            passageLogger.error("[WEBVIEW] sendToBackend failed: \(error)")
+                        } else if success {
+                            passageLogger.debug("[WEBVIEW] sendToBackend succeeded")
+                        }
                     }
                     
                 case "CLOSE_CONFIRMED":

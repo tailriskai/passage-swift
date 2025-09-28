@@ -54,6 +54,11 @@ public enum PassageConstants {
     public enum Defaults {
         public static let modalTitle = ""
         public static let showGrabber = false
+        // New URL structure (separate UI and API)
+        public static let uiUrl = "https://ui.runpassage.ai"
+        public static let apiUrl = "https://api.runpassage.ai"
+        // Deprecated: use uiUrl instead
+        @available(*, deprecated, message: "Use uiUrl instead")
         public static let baseUrl = "https://ui.runpassage.ai"
         public static let socketUrl = "https://api.runpassage.ai"
         public static let socketNamespace = "/ws"
