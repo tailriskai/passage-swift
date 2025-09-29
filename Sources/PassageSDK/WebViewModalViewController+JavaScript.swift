@@ -502,6 +502,25 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                 case PassageConstants.MessageTypes.close:
                     passageLogger.webView("Close modal", webViewType: webViewType)
                     closeModal()
+                case PassageConstants.MessageTypes.switchWebview:
+                    passageLogger.webView("Switch webview requested", webViewType: webViewType)
+                    if isShowingUIWebView {
+                        passageLogger.info("[WEBVIEW] Switching from UI to Automation webview")
+                        showAutomationWebView()
+                    } else {
+                        passageLogger.info("[WEBVIEW] Switching from Automation to UI webview")
+                        showUIWebView()
+                    }
+                case PassageConstants.MessageTypes.showBottomSheet:
+                    passageLogger.webView("Show bottom sheet requested", webViewType: webViewType)
+                    if let title = body["title"] as? String {
+                        let description = body["description"] as? String
+                        let points = body["points"] as? [String]
+                        let closeButtonText = body["closeButtonText"] as? String
+                        presentBottomSheet(title: title, description: description, points: points, closeButtonText: closeButtonText)
+                    } else {
+                        passageLogger.error("[WEBVIEW] showBottomSheet missing required 'title' parameter")
+                    }
                 case PassageConstants.MessageTypes.setTitle:
                     if let title = body["title"] as? String {
                         passageLogger.webView("Set title: \(title)", webViewType: webViewType)

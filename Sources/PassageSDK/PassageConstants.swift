@@ -18,6 +18,8 @@ public enum PassageConstants {
         static let backPressed = "backPressed"
         static let pageLoaded = "page_loaded"
         static let scriptInjection = "script_injection"
+        static let switchWebview = "switchWebview"
+        static let showBottomSheet = "showBottomSheet"
     }
     
     // Presentation styles

@@ -84,7 +84,7 @@ class ViewController: UIViewController {
 
         // Title Label
         titleLabel = UILabel()
-        titleLabel.text = "Passage SDK Example"
+        titleLabel.text = "Passage SDK"
         titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
         titleLabel.textAlignment = .center
         titleLabel.translatesAutoresizingMaskIntoConstraints = false

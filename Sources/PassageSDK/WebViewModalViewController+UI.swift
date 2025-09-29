@@ -353,5 +353,47 @@ extension WebViewModalViewController {
             self?.view.endEditing(true)
         }
     }
+
+    func presentBottomSheet(title: String, description: String?, points: [String]?, closeButtonText: String?) {
+        passageLogger.info("[BOTTOM SHEET] Presenting bottom sheet with title: \(title)")
+        passageLogger.debug("[BOTTOM SHEET] Description: \(description ?? "nil")")
+        passageLogger.debug("[BOTTOM SHEET] Points count: \(points?.count ?? 0)")
+        passageLogger.debug("[BOTTOM SHEET] Close button text: \(closeButtonText ?? "nil")")
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            if let existingBottomSheet = self.presentedViewController as? BottomSheetViewController {
+                passageLogger.info("[BOTTOM SHEET] Bottom sheet already visible, updating content")
+                existingBottomSheet.updateContent(
+                    title: title,
+                    description: description,
+                    points: points,
+                    closeButtonText: closeButtonText
+                )
+                return
+            }
+
+            let bottomSheetVC = BottomSheetViewController(
+                title: title,
+                description: description,
+                points: points,
+                closeButtonText: closeButtonText
+            )
+
+            if #available(iOS 15.0, *) {
+                if let sheet = bottomSheetVC.sheetPresentationController {
+                    sheet.detents = [.medium(), .large()]
+                    sheet.prefersGrabberVisible = true
+                    sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+                    sheet.preferredCornerRadius = 16
+                }
+            }
+
+            self.present(bottomSheetVC, animated: true) {
+                passageLogger.info("[BOTTOM SHEET] Bottom sheet presented successfully")
+            }
+        }
+    }
 }
 #endif

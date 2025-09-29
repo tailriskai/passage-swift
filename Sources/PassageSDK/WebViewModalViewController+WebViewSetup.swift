@@ -590,6 +590,46 @@ extension WebViewModalViewController {
                   } catch (error) {
                     console.error('[Passage] Error in sendToBackend:', error);
                   }
+                },
+
+                switchWebview: function() {
+                  console.log('[Passage] switchWebview called');
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'switchWebview',
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      });
+                      console.log('[Passage] switchWebview request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for switchWebview');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error switching webview:', error);
+                  }
+                },
+
+                showBottomSheetModal: function(params) {
+                  console.log('[Passage] showBottomSheetModal called with params:', params);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'showBottomSheet',
+                        title: params.title,
+                        description: params.description || null,
+                        points: params.points || null,
+                        closeButtonText: params.closeButtonText || null,
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      });
+                      console.log('[Passage] showBottomSheetModal request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for showBottomSheetModal');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error showing bottom sheet:', error);
+                  }
                 }
               };
 
@@ -783,6 +823,46 @@ extension WebViewModalViewController {
                     }
                   } catch (error) {
                     console.error('[Passage] Error in sendToBackend:', error);
+                  }
+                },
+
+                switchWebview: function() {
+                  console.log('[Passage] switchWebview called');
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'switchWebview',
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                      console.log('[Passage] switchWebview request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for switchWebview');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error switching webview:', error);
+                  }
+                },
+
+                showBottomSheetModal: function(params) {
+                  console.log('[Passage] showBottomSheetModal called with params:', params);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'showBottomSheet',
+                        title: params.title,
+                        description: params.description || null,
+                        points: params.points || null,
+                        closeButtonText: params.closeButtonText || null,
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                      console.log('[Passage] showBottomSheetModal request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for showBottomSheetModal');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error showing bottom sheet:', error);
                   }
                 }
               };
