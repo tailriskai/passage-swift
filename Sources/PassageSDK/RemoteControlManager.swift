@@ -601,7 +601,42 @@ class RemoteControlManager {
     }
     
     // Note: extractImageOptimizationParameters removed - now using configuration instead of JWT
-    
+
+    private func extractClearAllCookiesFlag(from token: String) -> Bool {
+        passageLogger.debug("[JWT DECODE] Extracting clearAllCookies flag from token")
+        let components = token.components(separatedBy: ".")
+        guard components.count == 3 else {
+            passageLogger.error("[JWT DECODE] Invalid JWT format for clearAllCookies - expected 3 components, got \(components.count)")
+            return false
+        }
+
+        let payload = components[1]
+        guard let data = Data(base64Encoded: addPadding(to: payload)) else {
+            passageLogger.error("[JWT DECODE] Failed to decode base64 payload for clearAllCookies")
+            return false
+        }
+
+        do {
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if let clearAllCookies = json["clearAllCookies"] as? Bool {
+                    passageLogger.info("[JWT DECODE] ✅ Found clearAllCookies flag: \(clearAllCookies)")
+                    return clearAllCookies
+                } else {
+                    passageLogger.debug("[JWT DECODE] No 'clearAllCookies' field found in JWT payload")
+                }
+            }
+        } catch {
+            passageLogger.error("[JWT DECODE] Failed to decode clearAllCookies flag from intent token: \(error)")
+        }
+
+        return false
+    }
+
+    func getClearAllCookiesFlag() -> Bool {
+        guard let intentToken = intentToken else { return false }
+        return extractClearAllCookiesFlag(from: intentToken)
+    }
+
     // MARK: - Screenshot Capture Methods
     
     /// Start interval-based screenshot capture if JWT flags are enabled

@@ -455,10 +455,31 @@ extension WebViewModalViewController {
         passageLogger.info("[WEBVIEW] ✅ Navigate URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
         passageLogger.info("[WEBVIEW] Command ID: \(commandId ?? "nil")")
 
-        if let currentURL = automationWebView?.url?.absoluteString, currentURL == url {
-            passageLogger.info("[WEBVIEW] ✅ Already on target URL, returning success without navigating")
+        // Check if we're already on the target URL
+        let currentURL = automationWebView?.url?.absoluteString
+        passageLogger.info("[WEBVIEW] Current URL: \(currentURL ?? "nil")")
+        passageLogger.info("[WEBVIEW] Target URL: \(url)")
+        passageLogger.info("[WEBVIEW] URLs match: \(currentURL == url)")
 
-            remoteControl?.checkNavigationEnd(url)
+        if let currentURL = currentURL, currentURL == url {
+            passageLogger.info("[WEBVIEW] ✅ Already on target URL, completing navigation command without navigating")
+            passageLogger.info("[WEBVIEW] Sending navigation complete notification immediately")
+
+            // We need to trigger the navigation completion flow without actually navigating
+            // This ensures the command result is sent with proper page data
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+
+                passageLogger.info("[WEBVIEW] Notifying RemoteControlManager of navigation completion")
+
+                // Call handleNavigationComplete to send success with page data
+                self.remoteControl?.handleNavigationComplete(url)
+
+                // Also check for success URL matching
+                self.remoteControl?.checkNavigationEnd(url)
+
+                passageLogger.info("[WEBVIEW] Navigation completion handling finished for already-on-URL case")
+            }
 
             return
         }
