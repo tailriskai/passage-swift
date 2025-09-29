@@ -363,6 +363,16 @@ public class Passage: NSObject {
             passageLogger.error("[SDK] ❌ CRITICAL: onExit callback was not stored properly!")
         }
         
+        // Check if we should clear all cookies based on JWT flag
+        if let remoteControl = remoteControl {
+            // Temporarily set the token to extract the flag
+            let shouldClearCookies = remoteControl.extractClearAllCookiesFlag(from: token)
+            if shouldClearCookies {
+                passageLogger.info("[SDK] clearAllCookies flag detected in JWT token - clearing all cookies")
+                clearAllCookies()
+            }
+        }
+
         // Build URL from token
         let url = buildUrlFromToken(token)
         DispatchQueue.main.async { [weak self] in

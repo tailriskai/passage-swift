@@ -602,7 +602,7 @@ class RemoteControlManager {
     
     // Note: extractImageOptimizationParameters removed - now using configuration instead of JWT
 
-    private func extractClearAllCookiesFlag(from token: String) -> Bool {
+    func extractClearAllCookiesFlag(from token: String) -> Bool {
         passageLogger.debug("[JWT DECODE] Extracting clearAllCookies flag from token")
         let components = token.components(separatedBy: ".")
         guard components.count == 3 else {

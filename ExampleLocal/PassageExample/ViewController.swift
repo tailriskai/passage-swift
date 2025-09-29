@@ -13,6 +13,9 @@ class ViewController: UIViewController {
     private var tokenLabel: UILabel!
     private var tokenTextView: UITextView!
     private var modeSegmentedControl: UISegmentedControl!
+    private var clearCookiesSwitch: UISwitch!
+    private var clearCookiesLabel: UILabel!
+    private var clearCookiesStackView: UIStackView!
     private var selectedIntegration: String = "kroger"
     private var exitCallCount: Int = 0  // Track onExit callback calls
     private var isInitialized: Bool = false  // Track SDK initialization state
@@ -121,6 +124,33 @@ class ViewController: UIViewController {
         integrationButton.isEnabled = false  // Disable while loading integrations
         view.addSubview(integrationButton)
 
+        // Clear Cookies Stack View (for auto-fetch mode)
+        clearCookiesStackView = UIStackView()
+        clearCookiesStackView.axis = .horizontal
+        clearCookiesStackView.spacing = 12
+        clearCookiesStackView.alignment = .center
+        clearCookiesStackView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(clearCookiesStackView)
+
+        // Clear Cookies Switch
+        clearCookiesSwitch = UISwitch()
+        clearCookiesSwitch.isOn = false
+        clearCookiesSwitch.translatesAutoresizingMaskIntoConstraints = false
+        clearCookiesStackView.addArrangedSubview(clearCookiesSwitch)
+
+        // Clear Cookies Label
+        clearCookiesLabel = UILabel()
+        clearCookiesLabel.text = "Clear all cookies"
+        clearCookiesLabel.font = .systemFont(ofSize: 16)
+        clearCookiesLabel.textColor = .label
+        clearCookiesLabel.translatesAutoresizingMaskIntoConstraints = false
+        clearCookiesStackView.addArrangedSubview(clearCookiesLabel)
+
+        // Add spacer to push content to the left
+        let spacerView = UIView()
+        spacerView.translatesAutoresizingMaskIntoConstraints = false
+        clearCookiesStackView.addArrangedSubview(spacerView)
+
         // Token Label
         tokenLabel = UILabel()
         tokenLabel.text = "Intent Token:"
@@ -202,7 +232,7 @@ class ViewController: UIViewController {
 
         // Set up constraints
         // Create dynamic constraints for button positioning
-        connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: integrationButton.bottomAnchor, constant: 30)
+        connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: clearCookiesStackView.bottomAnchor, constant: 30)
         initializeButtonTopConstraint = initializeButton.topAnchor.constraint(equalTo: tokenTextView.bottomAnchor, constant: 20)
         resultTextViewTopConstraint = resultTextView.topAnchor.constraint(equalTo: connectButton.bottomAnchor, constant: 20)
 
@@ -227,6 +257,11 @@ class ViewController: UIViewController {
             integrationButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             integrationButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             integrationButton.heightAnchor.constraint(equalToConstant: 44),
+
+            // Clear Cookies Stack View (for auto-fetch mode)
+            clearCookiesStackView.topAnchor.constraint(equalTo: integrationButton.bottomAnchor, constant: 16),
+            clearCookiesStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            clearCookiesStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
 
             // Token Label (for manual mode)
             tokenLabel.topAnchor.constraint(equalTo: modeSegmentedControl.bottomAnchor, constant: 20),
@@ -306,6 +341,7 @@ class ViewController: UIViewController {
         // Update integration label visibility
         integrationLabel.isHidden = isManualMode
         integrationButton.isHidden = isManualMode
+        clearCookiesStackView.isHidden = isManualMode
 
         // Update button positioning constraints
         connectButtonTopConstraint.isActive = false
@@ -316,8 +352,8 @@ class ViewController: UIViewController {
             connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: tokenTextView.bottomAnchor, constant: 20)
             initializeButtonTopConstraint = initializeButton.topAnchor.constraint(equalTo: tokenTextView.bottomAnchor, constant: 20)
         } else {
-            // In auto-fetch mode, position connect button below integration button
-            connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: integrationButton.bottomAnchor, constant: 30)
+            // In auto-fetch mode, position connect button below clear cookies stack view
+            connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: clearCookiesStackView.bottomAnchor, constant: 30)
             // Initialize button constraint doesn't matter in auto-fetch mode since it's hidden
             initializeButtonTopConstraint = initializeButton.topAnchor.constraint(equalTo: tokenTextView.bottomAnchor, constant: 20)
         }
@@ -733,10 +769,15 @@ class ViewController: UIViewController {
         request.setValue("cors", forHTTPHeaderField: "sec-fetch-mode")
         request.setValue("cross-site", forHTTPHeaderField: "sec-fetch-site")
 
-        // Create request body with selected integration
-        let requestBody: [String: Any] = [
+        // Create request body with selected integration and clearAllCookies flag
+        var requestBody: [String: Any] = [
             "integrationId": selectedIntegration
         ]
+
+        // Add clearAllCookies flag if the switch is on
+        if clearCookiesSwitch.isOn {
+            requestBody["clearAllCookies"] = true
+        }
 
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: requestBody)
