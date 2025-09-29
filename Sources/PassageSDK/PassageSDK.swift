@@ -363,13 +363,18 @@ public class Passage: NSObject {
             passageLogger.error("[SDK] ❌ CRITICAL: onExit callback was not stored properly!")
         }
         
-        // Check if we should clear all cookies based on JWT flag
+        // Check if we should clear cookies based on JWT flag
         if let remoteControl = remoteControl {
-            // Temporarily set the token to extract the flag
             let shouldClearCookies = remoteControl.extractClearAllCookiesFlag(from: token)
             if shouldClearCookies {
-                passageLogger.info("[SDK] clearAllCookies flag detected in JWT token - clearing all cookies")
-                clearAllCookies()
+                // Check if we have specific domains to clear
+                if let domains = remoteControl.getCookieDomains(from: token), !domains.isEmpty {
+                    passageLogger.info("[SDK] clearAllCookies flag detected with specific domains: \(domains)")
+                    clearCookies(forDomains: domains)
+                } else {
+                    passageLogger.info("[SDK] clearAllCookies flag detected - clearing all cookies")
+                    clearAllCookies()
+                }
             }
         }
 
@@ -633,19 +638,44 @@ public class Passage: NSObject {
         }
     }
     
+    /// Clear cookies for specific domains only (preserves localStorage, sessionStorage, and other data)
+    /// Use clearWebViewData() if you want to clear everything including localStorage and sessionStorage
+    public func clearCookies(forDomains domains: [String]) {
+        passageLogger.info("[SDK] Clearing cookies for specific domains: \(domains)")
+
+        DispatchQueue.main.async {
+            WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+                var deletedCount = 0
+
+                for cookie in cookies {
+                    // Check if cookie matches any of the specified domains
+                    for domain in domains {
+                        if self.cookieMatchesDomain(cookie: cookie, targetDomain: domain) {
+                            WKWebsiteDataStore.default().httpCookieStore.delete(cookie)
+                            deletedCount += 1
+                            break
+                        }
+                    }
+                }
+
+                passageLogger.info("[SDK] Cleared \(deletedCount) cookies for domains: \(domains)")
+            }
+        }
+    }
+
     /// Clear all cookies only (preserves localStorage, sessionStorage, and other data)
     /// Use clearWebViewData() if you want to clear everything including localStorage and sessionStorage
     public func clearAllCookies() {
         passageLogger.info("[SDK] Clearing all cookies only (preserving localStorage, sessionStorage)")
-        
+
         DispatchQueue.main.async {
             WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
                 passageLogger.debug("[SDK] Found \(cookies.count) cookies to clear")
-                
+
                 for cookie in cookies {
                     WKWebsiteDataStore.default().httpCookieStore.delete(cookie)
                 }
-                
+
                 passageLogger.info("[SDK] All cookies cleared successfully")
             }
         }
@@ -1159,27 +1189,65 @@ public class Passage: NSObject {
     
     private func cookieMatchesURL(cookie: HTTPCookie, url: URL) -> Bool {
         guard let host = url.host else { return false }
-        
+
         // Check domain
         let cookieDomain = cookie.domain.hasPrefix(".") ? cookie.domain : ".\(cookie.domain)"
         let hostWithDot = ".\(host)"
-        
+
         if !hostWithDot.hasSuffix(cookieDomain) && host != cookie.domain {
             return false
         }
-        
+
         // Check path
         let path = url.path.isEmpty ? "/" : url.path
         if !path.hasPrefix(cookie.path) {
             return false
         }
-        
+
         // Check secure
         if cookie.isSecure && url.scheme != "https" {
             return false
         }
-        
+
         return true
+    }
+
+    private func cookieMatchesDomain(cookie: HTTPCookie, targetDomain: String) -> Bool {
+        let cookieDomain = cookie.domain.lowercased()
+        let target = targetDomain.lowercased()
+
+        // Exact match
+        if cookieDomain == target {
+            return true
+        }
+
+        // Cookie domain starts with "." - matches all subdomains
+        if cookieDomain.hasPrefix(".") {
+            // Check if target exactly matches the domain without the dot
+            let domainWithoutDot = String(cookieDomain.dropFirst())
+            if target == domainWithoutDot {
+                return true
+            }
+            // Check if target ends with the cookie domain (subdomain match)
+            if target.hasSuffix(cookieDomain) {
+                return true
+            }
+        }
+
+        // Target domain starts with "." - treat as wildcard
+        if target.hasPrefix(".") {
+            let targetWithoutDot = String(target.dropFirst())
+            // Cookie domain is exact match without dot
+            if cookieDomain == targetWithoutDot {
+                return true
+            }
+            // Cookie domain ends with target (subdomain match)
+            if cookieDomain.hasSuffix(target) {
+                return true
+            }
+        }
+
+        return false
     }
     
     deinit {

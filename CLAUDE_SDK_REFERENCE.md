@@ -869,7 +869,133 @@ isPresentingModal = true
 
 ---
 
-## Recent Enhancements (v3.1.0)
+## Recent Enhancements
+
+### Version 0.0.50 - OAuth and Popup Support
+
+**Major Enhancement**: Full OAuth authentication support with popup window handling, enabling Google, Facebook, Microsoft, and other OAuth providers to work seamlessly in the SDK webviews.
+
+#### OAuth Popup Support
+
+**WKUIDelegate Implementation:**
+- Added full `WKUIDelegate` protocol implementation for popup window handling
+- Handles `window.open()` calls from JavaScript, including empty URL popups
+- Supports JavaScript-controlled popup navigation (common OAuth pattern)
+- Implements JavaScript alert, confirm, and prompt dialogs
+
+**Popup Window Management:**
+- Creates actual popup webviews for OAuth flows
+- Visual popup display with semi-transparent overlay
+- User-dismissible with close button (✕)
+- Handles `window.close()` from JavaScript
+- Supports multiple concurrent popups
+- Proper memory management and cleanup
+
+**Empty URL Popup Pattern:**
+```javascript
+// Common OAuth pattern now supported
+const popup = window.open('', 'oauth_popup');
+popup.location = 'https://accounts.google.com/oauth/...';
+```
+
+**OAuth Provider Detection:**
+- Automatic detection of OAuth URLs from major providers:
+  - Google (accounts.google.com, oauth2.googleapis.com)
+  - Facebook (facebook.com, m.facebook.com)
+  - Apple (appleid.apple.com)
+  - Microsoft (login.microsoftonline.com)
+  - GitHub, Twitter/X, LinkedIn
+  - Generic OAuth paths (/oauth, /auth, /signin, /authorize)
+
+**User Agent Configuration:**
+- Custom user agent applied consistently to all webviews
+- Popups inherit parent webview's user agent configuration
+- User agent preserved across OAuth redirects
+- Falls back to automation user agent or Safari default
+
+**JavaScript Configuration:**
+- `javaScriptCanOpenWindowsAutomatically = true` enabled for popup support
+- Custom JavaScript injection maintained for all URLs (including OAuth)
+- Console error tracking preserved in popups
+
+**Target="_blank" Handling:**
+- Links with `target="_blank"` load in current frame instead of being blocked
+- Prevents popup blockers from interfering with OAuth flows
+
+**External URL Scheme Support:**
+- App-to-app OAuth support (googlechrome://, fb://, etc.)
+- Universal Links handling
+- Fallback to web-based OAuth when apps not installed
+
+**ASWebAuthenticationSession Support:**
+- Optional fallback using native iOS authentication session (iOS 12+)
+- Shared cookies support
+- Presentation context provider implementation
+
+#### New Files Added
+
+**WebViewModalViewController+OAuth.swift** (~295 lines):
+- OAuth URL detection and provider identification
+- User agent management for OAuth flows
+- External URL scheme handling
+- Popup window management
+- OAuth callback parameter extraction
+- ASWebAuthenticationSession integration
+
+#### Modified Components
+
+**WebViewModalViewController.swift:**
+- Added `WKUIDelegate` protocol conformance
+- Added popup tracking: `popupWebViews: [PassageWKWebView]`
+- Added popup container view management
+
+**WebViewModalViewController+Navigation.swift:**
+- Implemented `createWebViewWith` for popup creation
+- Implemented JavaScript dialog handlers (alert/confirm/prompt)
+- Implemented `webViewDidClose` for popup cleanup
+- Added `closePopup`, `closeAllPopups`, `closeTopPopup` methods
+- OAuth-aware navigation policy updates
+- Target="_blank" link handling
+
+**WebViewModalViewController+WebViewSetup.swift:**
+- Set `uiDelegate` on webview creation
+- Enabled `javaScriptCanOpenWindowsAutomatically`
+- User agent configuration updated for OAuth compatibility
+
+#### OAuth Flow Support
+
+**Supported OAuth Patterns:**
+1. Direct OAuth URL navigation
+2. Popup with immediate URL (`window.open('https://oauth...')`)
+3. Empty popup + JavaScript navigation (`window.open('') + popup.location = '...'`)
+4. Multiple redirects during OAuth flow
+5. Post-OAuth callback handling
+6. App-to-app authentication (when apps installed)
+
+**What Works Now:**
+- ✅ Google OAuth (all methods)
+- ✅ Facebook OAuth
+- ✅ Microsoft OAuth
+- ✅ Apple Sign In (web)
+- ✅ GitHub OAuth
+- ✅ Twitter/X OAuth
+- ✅ LinkedIn OAuth
+- ✅ Custom OAuth providers
+
+**Key Features:**
+- Popups display as centered overlays (90% width, 80% height)
+- Semi-transparent black background (50% opacity)
+- Close button in top-right corner
+- Proper cookie persistence across OAuth flow
+- User agent consistency maintained
+- JavaScript functionality preserved
+- Memory efficient cleanup
+
+**Breaking Changes:** None - fully backward compatible
+
+---
+
+### Version 3.1.0 - WebView Switching and Bottom Sheet
 
 ### WebView Switching API
 
@@ -928,14 +1054,17 @@ Added to `PassageConstants.MessageTypes`:
 
 ---
 
-**Document Version**: 3.1.0
-**Last Updated**: 2025-09-28
+**Document Version**: 0.0.50
+**Last Updated**: 2025-09-29
 **Status**: Current Implementation
 **Platform**: iOS/macOS Swift SDK
 **Recent Changes**:
-- Added switchWebview API
-- Added bottom sheet modal component
-- Enhanced WebView JavaScript bridge
-- Improved content update handling
-
-window.passage.showBottomSheetModal({title: "Action required", description: "Copy your magic link to the clipboard, then return to the Passage app", closeButtonText: "Close"})
+- Added full OAuth authentication support
+- Implemented WKUIDelegate for popup handling
+- Added popup window management system
+- Support for empty URL popups + JS navigation
+- Custom user agent consistency across OAuth flows
+- JavaScript injection maintained for OAuth
+- Target="_blank" and external URL scheme handling
+- OAuth provider auto-detection
+- ASWebAuthenticationSession integration

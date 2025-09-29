@@ -632,9 +632,56 @@ class RemoteControlManager {
         return false
     }
 
+    func extractCookieDomains(from token: String) -> [String]? {
+        passageLogger.debug("[JWT DECODE] Extracting cookieDomains from token")
+        let components = token.components(separatedBy: ".")
+        guard components.count == 3 else {
+            passageLogger.error("[JWT DECODE] Invalid JWT format for cookieDomains - expected 3 components, got \(components.count)")
+            return nil
+        }
+
+        let payload = components[1]
+        guard let data = Data(base64Encoded: addPadding(to: payload)) else {
+            passageLogger.error("[JWT DECODE] Failed to decode base64 payload for cookieDomains")
+            return nil
+        }
+
+        do {
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if let domains = json["cookieDomains"] as? [String] {
+                    passageLogger.info("[JWT DECODE] ✅ Found cookieDomains in JWT: \(domains)")
+                    return domains
+                } else {
+                    passageLogger.debug("[JWT DECODE] No 'cookieDomains' field found in JWT payload")
+                }
+            }
+        } catch {
+            passageLogger.error("[JWT DECODE] Failed to decode cookieDomains from intent token: \(error)")
+        }
+
+        return nil
+    }
+
     func getClearAllCookiesFlag() -> Bool {
         guard let intentToken = intentToken else { return false }
         return extractClearAllCookiesFlag(from: intentToken)
+    }
+
+    func getCookieDomains(from token: String) -> [String]? {
+        // First check JWT
+        if let jwtDomains = extractCookieDomains(from: token), !jwtDomains.isEmpty {
+            passageLogger.info("[REMOTE CONTROL] Using cookieDomains from JWT: \(jwtDomains)")
+            return jwtDomains
+        }
+
+        // Then check configuration
+        if !cookieDomains.isEmpty {
+            passageLogger.info("[REMOTE CONTROL] Using cookieDomains from configuration: \(cookieDomains)")
+            return cookieDomains
+        }
+
+        passageLogger.debug("[REMOTE CONTROL] No cookieDomains found in JWT or configuration")
+        return nil
     }
 
     // MARK: - Screenshot Capture Methods

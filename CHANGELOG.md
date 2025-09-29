@@ -14,11 +14,16 @@ All notable changes to the PassageSDK will be documented in this file.
   - **NEW**: Automatically transfers popup navigation to main WebView when URL is assigned
   - **NEW**: Proper cleanup and tracking of popup WebViews
 
-- **Clear All Cookies Support** - Added automatic cookie clearing based on configuration:
+- **Clear All Cookies Support** - Added automatic cookie clearing with domain-specific filtering:
   - Extracts `clearAllCookies` flag from JWT token payload
-  - Checks `clearAllCookies` flag in configuration response from backend
-  - Automatically clears all cookies when flag is detected on initialization
-  - Uses notification system for cross-component communication
+  - Extracts `cookieDomains` array from JWT token payload for selective clearing
+  - Checks `cookieDomains` in configuration response from backend as fallback
+  - **NEW**: Domain-specific cookie clearing - when `cookieDomains` provided, only clears cookies for specified domains
+  - Falls back to clearing all cookies when `clearAllCookies=true` but no domains specified
+  - Added `clearCookies(forDomains:)` public API method for programmatic domain-specific clearing
+  - Supports wildcard domain matching (e.g., `.example.com` matches all subdomains)
+  - Preserves cookies from other domains when clearing specific domains
+  - Automatically clears cookies on SDK initialization when flag is detected
 
 ### Fixed
 - **Navigation Command Results** - Fixed regression where navigate commands wouldn't receive results when WebView was already on target URL
