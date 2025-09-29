@@ -39,6 +39,12 @@ extension WebViewModalViewController {
                 return
             }
 
+            // Log OAuth detection but keep custom user agent
+            if self.isOAuthURL(urlString) {
+                passageLogger.info("[OAUTH] Detected OAuth URL in UI webview, keeping custom user agent")
+                // Keep the custom user agent for OAuth flows
+            }
+
             var request = URLRequest(url: url)
             request.cachePolicy = .reloadIgnoringLocalCacheData
             request.timeoutInterval = 30.0
@@ -160,6 +166,12 @@ extension WebViewModalViewController {
 
                 self.intendedAutomationURL = url
                 passageLogger.info("[WEBVIEW] 📝 Stored intended automation URL: \(url)")
+
+                // Log OAuth detection but keep custom user agent
+                if self.isOAuthURL(url) {
+                    passageLogger.info("[OAUTH] Detected OAuth URL in automation webview, keeping custom user agent")
+                    // Keep the custom user agent for OAuth flows
+                }
 
                 let request = URLRequest(url: urlObj)
                 self.automationWebView?.load(request)
@@ -555,6 +567,16 @@ extension WebViewModalViewController: WKNavigationDelegate {
         if let url = webView.url {
             passageLogger.info("[NAVIGATION] 🚀 \(webViewType) loading: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
 
+            // Check if this is a popup webview navigating to OAuth
+            if let popupWebView = webView as? PassageWKWebView,
+               popupWebViews.contains(where: { $0 === popupWebView }) {
+                if isOAuthURL(url.absoluteString) {
+                    passageLogger.info("[OAUTH] Popup navigating to OAuth URL, keeping custom user agent")
+                    // Keep the custom user agent for OAuth flows in popups
+                    // User agent is already set during popup creation
+                }
+            }
+
             if webViewType == PassageConstants.WebViewTypes.automation {
                 remoteControl?.checkNavigationStart(url.absoluteString)
             }
@@ -695,6 +717,26 @@ extension WebViewModalViewController: WKNavigationDelegate {
         if let url = navigationAction.request.url {
             passageLogger.debug("Navigation policy check for URL: \(url.absoluteString)")
             passageLogger.debug("Navigation type: \(navigationAction.navigationType.rawValue)")
+
+            // Check if this is an OAuth URL that should be handled specially
+            if isOAuthURL(url.absoluteString) {
+                passageLogger.info("[OAUTH] Handling OAuth navigation to: \(url.absoluteString)")
+
+                // Check if this should open externally
+                if shouldOpenExternally(url) {
+                    handleExternalOAuthURL(url)
+                    decisionHandler(.cancel)
+                    return
+                }
+            }
+
+            // Handle target="_blank" links
+            if navigationAction.targetFrame == nil {
+                passageLogger.debug("[NAVIGATION] Target frame is nil (likely target='_blank'), loading in current frame")
+                webView.load(navigationAction.request)
+                decisionHandler(.cancel)
+                return
+            }
         }
 
         decisionHandler(.allow)
@@ -756,6 +798,270 @@ extension WebViewModalViewController {
             if let url = URL(string: newURL) {
                 delegate?.webViewModal(didNavigateTo: url)
             }
+        }
+    }
+}
+
+// MARK: - WKUIDelegate Implementation
+
+extension WebViewModalViewController {
+
+    /// Handle requests to open a new window (popups, target="_blank", window.open())
+    func webView(_ webView: WKWebView,
+                 createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction,
+                 windowFeatures: WKWindowFeatures) -> WKWebView? {
+
+        let url = navigationAction.request.url
+        let urlString = url?.absoluteString ?? ""
+
+        passageLogger.info("[WEBVIEW] Window.open/popup request for: \(urlString.isEmpty ? "(empty - will be set via JS)" : urlString)")
+        passageLogger.debug("[WEBVIEW] Navigation type: \(navigationAction.navigationType.rawValue)")
+
+        // Check if URL is empty or about:blank (common for JS-controlled popups)
+        if urlString.isEmpty || urlString == "about:blank" {
+            passageLogger.info("[WEBVIEW] Empty URL popup - creating new webview for JS-controlled navigation")
+
+            // Create a new webview that will be navigated via JavaScript
+            let popupWebView = PassageWKWebView(frame: .zero, configuration: configuration)
+            popupWebView.navigationDelegate = self
+            popupWebView.uiDelegate = self
+
+            // Apply user agent from parent webview (automation webview user agent)
+            if let automationUA = automationWebView?.customUserAgent {
+                popupWebView.customUserAgent = automationUA
+                passageLogger.debug("[WEBVIEW] Applied automation webview user agent to popup: \(automationUA)")
+            } else if let automationConfigUA = automationUserAgent {
+                popupWebView.customUserAgent = automationConfigUA
+                passageLogger.debug("[WEBVIEW] Applied stored automation user agent to popup: \(automationConfigUA)")
+            } else {
+                popupWebView.customUserAgent = nil // Use default Safari user agent
+                passageLogger.debug("[WEBVIEW] Using default Safari user agent for popup")
+            }
+
+            popupWebView.translatesAutoresizingMaskIntoConstraints = false
+            popupWebView.backgroundColor = .white
+
+            // Add to view hierarchy
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+
+                // Create popup container if needed
+                if self.popupContainerView == nil {
+                    let container = UIView()
+                    container.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+                    container.translatesAutoresizingMaskIntoConstraints = false
+                    self.view.addSubview(container)
+
+                    NSLayoutConstraint.activate([
+                        container.topAnchor.constraint(equalTo: self.view.topAnchor),
+                        container.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+                        container.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+                        container.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
+                    ])
+
+                    self.popupContainerView = container
+                    passageLogger.debug("[WEBVIEW] Created popup container view")
+                }
+
+                // Add popup to container
+                if let container = self.popupContainerView {
+                    container.addSubview(popupWebView)
+
+                    // Make popup centered and sized appropriately
+                    NSLayoutConstraint.activate([
+                        popupWebView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+                        popupWebView.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+                        popupWebView.widthAnchor.constraint(equalTo: container.widthAnchor, multiplier: 0.9),
+                        popupWebView.heightAnchor.constraint(equalTo: container.heightAnchor, multiplier: 0.8)
+                    ])
+
+                    // Add close button to popup
+                    let closeButton = UIButton(type: .system)
+                    closeButton.setTitle("✕", for: .normal)
+                    closeButton.titleLabel?.font = UIFont.systemFont(ofSize: 28, weight: .light)
+                    closeButton.tintColor = .white
+                    closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+                    closeButton.layer.cornerRadius = 20
+                    closeButton.translatesAutoresizingMaskIntoConstraints = false
+
+                    closeButton.addTarget(self, action: #selector(self.closeTopPopup), for: .touchUpInside)
+
+                    container.addSubview(closeButton)
+
+                    NSLayoutConstraint.activate([
+                        closeButton.topAnchor.constraint(equalTo: popupWebView.topAnchor, constant: 8),
+                        closeButton.trailingAnchor.constraint(equalTo: popupWebView.trailingAnchor, constant: -8),
+                        closeButton.widthAnchor.constraint(equalToConstant: 40),
+                        closeButton.heightAnchor.constraint(equalToConstant: 40)
+                    ])
+
+                    container.isHidden = false
+                    self.view.bringSubviewToFront(container)
+
+                    // Track popup webview
+                    self.popupWebViews.append(popupWebView)
+
+                    passageLogger.info("[WEBVIEW] Popup webview added to view hierarchy with close button")
+                }
+            }
+
+            passageLogger.info("[WEBVIEW] Created popup webview with OAuth-safe configuration")
+
+            return popupWebView
+        }
+
+        // Check if this is an OAuth popup with a known URL
+        if isOAuthURL(urlString) {
+            passageLogger.info("[WEBVIEW] OAuth popup detected, handling in current webview")
+            return handleOAuthPopup(for: navigationAction, windowFeatures: windowFeatures)
+        }
+
+        // Check if we should open externally
+        if let url = url, shouldOpenExternally(url) {
+            handleExternalOAuthURL(url)
+            return nil
+        }
+
+        // For other popups, load in the current webview
+        passageLogger.info("[WEBVIEW] Loading popup URL in current webview: \(urlString)")
+        webView.load(navigationAction.request)
+
+        return nil
+    }
+
+    /// Handle JavaScript alert panels
+    func webView(_ webView: WKWebView,
+                 runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping () -> Void) {
+
+        passageLogger.debug("[WEBVIEW] JavaScript alert: \(message)")
+
+        let alertController = UIAlertController(title: nil,
+                                               message: message,
+                                               preferredStyle: .alert)
+
+        alertController.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+            completionHandler()
+        })
+
+        present(alertController, animated: true)
+    }
+
+    /// Handle JavaScript confirm panels
+    func webView(_ webView: WKWebView,
+                 runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (Bool) -> Void) {
+
+        passageLogger.debug("[WEBVIEW] JavaScript confirm: \(message)")
+
+        let alertController = UIAlertController(title: nil,
+                                               message: message,
+                                               preferredStyle: .alert)
+
+        alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            completionHandler(false)
+        })
+
+        alertController.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+            completionHandler(true)
+        })
+
+        present(alertController, animated: true)
+    }
+
+    /// Handle JavaScript text input panels
+    func webView(_ webView: WKWebView,
+                 runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (String?) -> Void) {
+
+        passageLogger.debug("[WEBVIEW] JavaScript prompt: \(prompt), default: \(defaultText ?? "nil")")
+
+        let alertController = UIAlertController(title: nil,
+                                               message: prompt,
+                                               preferredStyle: .alert)
+
+        alertController.addTextField { textField in
+            textField.text = defaultText
+        }
+
+        alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            completionHandler(nil)
+        })
+
+        alertController.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+            completionHandler(alertController.textFields?.first?.text)
+        })
+
+        present(alertController, animated: true)
+    }
+
+    /// Handle window close requests
+    func webViewDidClose(_ webView: WKWebView) {
+        passageLogger.info("[WEBVIEW] Window close requested")
+
+        // Check if this is a popup webview
+        if let popupWebView = webView as? PassageWKWebView,
+           popupWebViews.contains(where: { $0 === popupWebView }) {
+            passageLogger.info("[WEBVIEW] Closing popup webview")
+            closePopup(popupWebView)
+            return
+        }
+
+        // Handle main webview close
+        if webView == uiWebView || webView == automationWebView {
+            closeModal()
+        }
+    }
+
+    /// Close a specific popup webview
+    func closePopup(_ popupWebView: PassageWKWebView) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            // Remove from tracking
+            self.popupWebViews.removeAll { $0 === popupWebView }
+
+            // Remove from view hierarchy
+            popupWebView.removeFromSuperview()
+
+            // Hide container if no more popups
+            if self.popupWebViews.isEmpty {
+                self.popupContainerView?.isHidden = true
+                passageLogger.debug("[WEBVIEW] All popups closed, hiding container")
+            }
+
+            passageLogger.info("[WEBVIEW] Popup webview closed and cleaned up")
+        }
+    }
+
+    /// Close all popup webviews
+    func closeAllPopups() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            passageLogger.info("[WEBVIEW] Closing all \(self.popupWebViews.count) popup(s)")
+
+            for popup in self.popupWebViews {
+                popup.removeFromSuperview()
+            }
+
+            self.popupWebViews.removeAll()
+            self.popupContainerView?.isHidden = true
+
+            passageLogger.info("[WEBVIEW] All popups closed")
+        }
+    }
+
+    /// Close the most recently opened popup (called from close button)
+    @objc func closeTopPopup() {
+        if let topPopup = popupWebViews.last {
+            passageLogger.info("[WEBVIEW] User tapped close button on popup")
+            closePopup(topPopup)
         }
     }
 }

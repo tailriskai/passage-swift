@@ -110,6 +110,37 @@ extension WebViewModalViewController {
         }
     }
 
+    // MARK: - OAuth Callback Handling
+
+    func handleOAuthCallback(url: URL) {
+        passageLogger.info("[OAUTH] Handling OAuth callback URL: \(url.absoluteString)")
+
+        // Extract OAuth parameters (code, state, etc.)
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            var params: [String: String] = [:]
+            components.queryItems?.forEach { item in
+                params[item.name] = item.value
+            }
+
+            // Check for OAuth success
+            if let code = params["code"] {
+                passageLogger.info("[OAUTH] OAuth authorization successful, code received")
+                // The web application should handle the code exchange
+            }
+
+            // Check for OAuth error
+            if let error = params["error"] {
+                passageLogger.error("[OAUTH] OAuth authorization failed: \(error)")
+                if let errorDescription = params["error_description"] {
+                    passageLogger.error("[OAUTH] Error description: \(errorDescription)")
+                }
+            }
+        }
+
+        // Continue loading the callback URL in the webview
+        // The web application will handle the OAuth flow completion
+    }
+
     @objc func closeButtonTappedWithAnimation() {
         guard let button = modernCloseButton else { return }
 

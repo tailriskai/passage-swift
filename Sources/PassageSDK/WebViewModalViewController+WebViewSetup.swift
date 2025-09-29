@@ -20,6 +20,10 @@ extension WebViewModalViewController {
             passageLogger.debug("[WEBVIEW] JavaScript enabled: true (iOS 13)")
         }
 
+        // Enable JavaScript to open windows automatically (for OAuth popups)
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        passageLogger.debug("[WEBVIEW] JavaScript can open windows automatically: true")
+
         configuration.allowsInlineMediaPlayback = true
         passageLogger.debug("[WEBVIEW] Inline media playback allowed: true")
 
@@ -150,13 +154,19 @@ extension WebViewModalViewController {
 
         let webView = PassageWKWebView(frame: .zero, configuration: configuration)
 
-        if webViewType == PassageConstants.WebViewTypes.automation && automationUserAgent != nil {
-            webView.customUserAgent = automationUserAgent
-            passageLogger.debug("[WEBVIEW] Applied stored user agent to automation webview: \(automationUserAgent ?? "")")
+        // User agent configuration
+        if webViewType == PassageConstants.WebViewTypes.automation {
+            // Apply automation user agent regardless of OAuth
+            if automationUserAgent != nil {
+                webView.customUserAgent = automationUserAgent
+                passageLogger.debug("[WEBVIEW] Applied stored user agent to automation webview: \(automationUserAgent ?? "")")
+            }
         } else if debugSingleWebViewUrl != nil || forceSimpleWebView {
             webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         }
+
         webView.navigationDelegate = self
+        webView.uiDelegate = self // Set UI delegate for popup handling
         webView.translatesAutoresizingMaskIntoConstraints = false
 
         webView.backgroundColor = .white

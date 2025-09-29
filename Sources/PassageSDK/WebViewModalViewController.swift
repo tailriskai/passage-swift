@@ -25,7 +25,7 @@ class PassageWKWebView: WKWebView {
     }
 }
 
-class WebViewModalViewController: UIViewController, UIAdaptivePresentationControllerDelegate {
+class WebViewModalViewController: UIViewController, UIAdaptivePresentationControllerDelegate, WKUIDelegate {
     weak var delegate: WebViewModalDelegate?
 
     var modalTitle: String = ""
@@ -77,6 +77,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
 
     var intendedAutomationURL: String?
     var intendedUIURL: String?
+
+    // Popup window management
+    var popupWebViews: [PassageWKWebView] = []
+    var popupContainerView: UIView?
 
     override func viewDidLoad() {
         super.viewDidLoad()
