@@ -72,6 +72,9 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
         textField.translatesAutoresizingMaskIntoConstraints = false
         textField.addTarget(self, action: #selector(urlTextFieldChanged), for: .editingChanged)
         textField.delegate = self
+        // Prevent text field from expanding vertically
+        textField.setContentHuggingPriority(.required, for: .vertical)
+        textField.setContentCompressionResistancePriority(.required, for: .vertical)
         return textField
     }()
 
@@ -401,12 +404,19 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
     private func configureSheet() {
         if #available(iOS 15.0, *) {
             if let sheet = sheetPresentationController {
-                // Start with medium detent to avoid initial sizing issue
-                sheet.detents = [.medium()]
+                if #available(iOS 16.0, *) {
+                    // Start with a small fixed height
+                    let initialDetent = UISheetPresentationController.Detent.custom { context in
+                        return 200
+                    }
+                    sheet.detents = [initialDetent]
+                    sheet.selectedDetentIdentifier = initialDetent.identifier
+                } else {
+                    sheet.detents = [.medium()]
+                }
                 sheet.prefersGrabberVisible = true
                 sheet.prefersScrollingExpandsWhenScrolledToEdge = false
                 sheet.preferredCornerRadius = 16
-                sheet.largestUndimmedDetentIdentifier = .medium
             }
         }
     }
@@ -479,14 +489,16 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Pre-calculate size before appearing to avoid resize flash
+        // Pre-calculate size before appearing
         view.layoutIfNeeded()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // Update sheet height after it's fully presented
-        updateSheetHeight()
+        // Animate expansion to content size after a brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.updateSheetHeight()
+        }
     }
 
     // MARK: - UITextFieldDelegate
