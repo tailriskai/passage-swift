@@ -630,6 +630,7 @@ extension WebViewModalViewController {
                         description: params.description || null,
                         points: params.points || null,
                         closeButtonText: params.closeButtonText || null,
+                        showInput: params.showInput || false,
                         webViewType: 'automation',
                         timestamp: Date.now()
                       });
@@ -864,6 +865,7 @@ extension WebViewModalViewController {
                         description: params.description || null,
                         points: params.points || null,
                         closeButtonText: params.closeButtonText || null,
+                        showInput: params.showInput || false,
                         webViewType: 'ui',
                         timestamp: Date.now()
                       });

@@ -385,11 +385,12 @@ extension WebViewModalViewController {
         }
     }
 
-    func presentBottomSheet(title: String, description: String?, points: [String]?, closeButtonText: String?) {
-        passageLogger.info("[BOTTOM SHEET] Presenting bottom sheet with title: \(title)")
+    func presentBottomSheet(title: String?, description: String?, points: [String]?, closeButtonText: String?, showInput: Bool = false) {
+        passageLogger.info("[BOTTOM SHEET] Presenting bottom sheet with title: \(title ?? "nil")")
         passageLogger.debug("[BOTTOM SHEET] Description: \(description ?? "nil")")
         passageLogger.debug("[BOTTOM SHEET] Points count: \(points?.count ?? 0)")
         passageLogger.debug("[BOTTOM SHEET] Close button text: \(closeButtonText ?? "nil")")
+        passageLogger.debug("[BOTTOM SHEET] Show input: \(showInput)")
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -400,7 +401,13 @@ extension WebViewModalViewController {
                     title: title,
                     description: description,
                     points: points,
-                    closeButtonText: closeButtonText
+                    closeButtonText: closeButtonText,
+                    showInput: showInput,
+                    onSubmit: { [weak self] url in
+                        guard let self = self else { return }
+                        passageLogger.info("[BOTTOM SHEET] Navigating to URL in automation webview: \(url)")
+                        self.navigateInAutomationWebView(url)
+                    }
                 )
                 return
             }
@@ -409,17 +416,16 @@ extension WebViewModalViewController {
                 title: title,
                 description: description,
                 points: points,
-                closeButtonText: closeButtonText
+                closeButtonText: closeButtonText,
+                showInput: showInput,
+                onSubmit: { [weak self] url in
+                    guard let self = self else { return }
+                    passageLogger.info("[BOTTOM SHEET] Navigating to URL in automation webview: \(url)")
+                    self.navigateInAutomationWebView(url)
+                }
             )
 
-            if #available(iOS 15.0, *) {
-                if let sheet = bottomSheetVC.sheetPresentationController {
-                    sheet.detents = [.medium(), .large()]
-                    sheet.prefersGrabberVisible = true
-                    sheet.prefersScrollingExpandsWhenScrolledToEdge = false
-                    sheet.preferredCornerRadius = 16
-                }
-            }
+            // Sheet configuration is handled in BottomSheetViewController's viewDidLoad
 
             self.present(bottomSheetVC, animated: true) {
                 passageLogger.info("[BOTTOM SHEET] Bottom sheet presented successfully")

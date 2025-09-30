@@ -1,12 +1,19 @@
 #if canImport(UIKit)
 import UIKit
 
-class BottomSheetViewController: UIViewController, UIAdaptivePresentationControllerDelegate {
+class BottomSheetViewController: UIViewController, UIAdaptivePresentationControllerDelegate, UITextFieldDelegate {
 
     private var titleText: String
     private var descriptionText: String?
     private var bulletPoints: [String]?
     private var closeButtonText: String?
+    private var showInput: Bool
+    private var onSubmit: ((String) -> Void)?
+
+    // Constraint references for updates
+    private var contentStackBottomConstraint: NSLayoutConstraint?
+    private var buttonConstraints: [NSLayoutConstraint] = []
+    private var inputFieldHeightConstraint: NSLayoutConstraint?
 
     private lazy var containerView: UIView = {
         let view = UIView()
@@ -18,7 +25,7 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
     private lazy var contentStackView: UIStackView = {
         let stack = UIStackView()
         stack.axis = .vertical
-        stack.spacing = 8
+        stack.spacing = 12
         stack.alignment = .fill
         stack.translatesAutoresizingMaskIntoConstraints = false
         return stack
@@ -26,7 +33,7 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
 
     private lazy var titleLabel: UILabel = {
         let label = UILabel()
-        label.font = UIFont.systemFont(ofSize: 25, weight: .bold)
+        label.font = UIFont.systemFont(ofSize: 22, weight: .bold)
         label.textColor = .label
         label.numberOfLines = 0
         label.textAlignment = .center
@@ -53,6 +60,21 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
         return stack
     }()
 
+    private lazy var urlTextField: UITextField = {
+        let textField = UITextField()
+        textField.placeholder = "https://google.com"
+        textField.font = UIFont.systemFont(ofSize: 16, weight: .regular)
+        textField.borderStyle = .roundedRect
+        textField.autocapitalizationType = .none
+        textField.autocorrectionType = .no
+        textField.keyboardType = .URL
+        textField.returnKeyType = .go
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.addTarget(self, action: #selector(urlTextFieldChanged), for: .editingChanged)
+        textField.delegate = self
+        return textField
+    }()
+
     private lazy var closeButton: UIButton = {
         let button = UIButton(type: .system)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
@@ -64,12 +86,17 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
         return button
     }()
 
-    init(title: String, description: String?, points: [String]?, closeButtonText: String?) {
-        self.titleText = title
+    init(title: String?, description: String?, points: [String]?, closeButtonText: String?, showInput: Bool = false, onSubmit: ((String) -> Void)? = nil) {
+        self.titleText = title ?? ""
         self.descriptionText = description
         self.bulletPoints = points
-        self.closeButtonText = closeButtonText
+        self.closeButtonText = closeButtonText ?? (showInput ? "Submit" : nil)
+        self.showInput = showInput
+        self.onSubmit = onSubmit
         super.init(nibName: nil, bundle: nil)
+
+        passageLogger.info("[BOTTOM SHEET INIT] showInput: \(showInput)")
+        passageLogger.info("[BOTTOM SHEET INIT] closeButtonText: \(String(describing: self.closeButtonText))")
     }
 
     required init?(coder: NSCoder) {
@@ -93,13 +120,22 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
         view.addSubview(containerView)
         containerView.addSubview(contentStackView)
 
-        titleLabel.text = titleText
-        contentStackView.addArrangedSubview(titleLabel)
+        if !titleText.isEmpty {
+            titleLabel.text = titleText
+            contentStackView.addArrangedSubview(titleLabel)
+            // Reduce spacing after title
+            contentStackView.setCustomSpacing(8, after: titleLabel)
+        }
 
         if let description = descriptionText, !description.isEmpty {
             descriptionLabel.text = description
             contentStackView.addArrangedSubview(descriptionLabel)
-            contentStackView.setCustomSpacing(16, after: descriptionLabel)
+            // Increase spacing before input field
+            if showInput {
+                contentStackView.setCustomSpacing(20, after: descriptionLabel)
+            } else {
+                contentStackView.setCustomSpacing(16, after: descriptionLabel)
+            }
         }
 
         if let points = bulletPoints, !points.isEmpty {
@@ -108,6 +144,17 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
                 bulletPointsStackView.addArrangedSubview(bulletLabel)
             }
             contentStackView.addArrangedSubview(bulletPointsStackView)
+            // Increase spacing before input field if present
+            if showInput {
+                contentStackView.setCustomSpacing(20, after: bulletPointsStackView)
+            }
+        }
+
+        if showInput {
+            passageLogger.info("[BOTTOM SHEET SETUP] Adding input field to initial setup")
+            contentStackView.addArrangedSubview(urlTextField)
+        } else {
+            passageLogger.info("[BOTTOM SHEET SETUP] showInput is false, NOT adding input field")
         }
 
         var constraints = [
@@ -123,52 +170,107 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
 
         if let buttonText = closeButtonText, !buttonText.isEmpty {
             closeButton.setTitle(buttonText, for: .normal)
+            if showInput {
+                closeButton.isEnabled = false
+                closeButton.alpha = 0.5
+            }
             containerView.addSubview(closeButton)
 
-            constraints.append(contentsOf: [
-                contentStackView.bottomAnchor.constraint(equalTo: closeButton.topAnchor, constant: -24),
+            let stackToButtonConstraint = contentStackView.bottomAnchor.constraint(equalTo: closeButton.topAnchor, constant: -24)
+            contentStackBottomConstraint = stackToButtonConstraint
+
+            let newButtonConstraints = [
+                stackToButtonConstraint,
                 closeButton.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
                 closeButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
                 closeButton.bottomAnchor.constraint(equalTo: containerView.safeAreaLayoutGuide.bottomAnchor, constant: -12),
                 closeButton.heightAnchor.constraint(equalToConstant: 50)
-            ])
+            ]
+            buttonConstraints = newButtonConstraints
+            constraints.append(contentsOf: newButtonConstraints)
         } else {
-            constraints.append(
-                contentStackView.bottomAnchor.constraint(equalTo: containerView.safeAreaLayoutGuide.bottomAnchor, constant: -12)
-            )
+            let stackToBottomConstraint = contentStackView.bottomAnchor.constraint(equalTo: containerView.safeAreaLayoutGuide.bottomAnchor, constant: -12)
+            contentStackBottomConstraint = stackToBottomConstraint
+            constraints.append(stackToBottomConstraint)
+        }
+
+        if showInput {
+            let heightConstraint = urlTextField.heightAnchor.constraint(equalToConstant: 44)
+            inputFieldHeightConstraint = heightConstraint
+            constraints.append(heightConstraint)
         }
 
         NSLayoutConstraint.activate(constraints)
     }
 
     @objc private func closeButtonTapped() {
-        passageLogger.info("[BOTTOM SHEET] Close button tapped")
-        dismiss(animated: true, completion: nil)
+        if showInput, let url = urlTextField.text, isValidURL(url) {
+            passageLogger.info("[BOTTOM SHEET] Submit button tapped with valid URL: \(url)")
+            onSubmit?(url)
+            dismiss(animated: true, completion: nil)
+        } else if !showInput {
+            passageLogger.info("[BOTTOM SHEET] Close button tapped")
+            dismiss(animated: true, completion: nil)
+        }
     }
 
-    func updateContent(title: String, description: String?, points: [String]?, closeButtonText: String?) {
-        passageLogger.info("[BOTTOM SHEET] Updating content with new title: \(title)")
+    @objc private func urlTextFieldChanged() {
+        guard showInput else { return }
 
-        self.titleText = title
+        if let text = urlTextField.text, isValidURL(text) {
+            closeButton.isEnabled = true
+            closeButton.alpha = 1.0
+        } else {
+            closeButton.isEnabled = false
+            closeButton.alpha = 0.5
+        }
+    }
+
+    private func isValidURL(_ string: String) -> Bool {
+        guard let url = URL(string: string) else { return false }
+        return (url.scheme == "http" || url.scheme == "https") && url.host != nil
+    }
+
+    func updateContent(title: String?, description: String?, points: [String]?, closeButtonText: String?, showInput: Bool = false, onSubmit: ((String) -> Void)? = nil) {
+        passageLogger.info("[BOTTOM SHEET] Updating content with new title: \(title ?? "nil")")
+        passageLogger.info("[BOTTOM SHEET] Show input: \(showInput)")
+
+        self.titleText = title ?? ""
         self.descriptionText = description
         self.bulletPoints = points
-        self.closeButtonText = closeButtonText
+        self.closeButtonText = closeButtonText ?? (showInput ? "Submit" : nil)
+        self.showInput = showInput
+        if let onSubmit = onSubmit {
+            self.onSubmit = onSubmit
+        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
-            self.titleLabel.text = title
-
+            // Clear existing content
             self.contentStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
-            self.contentStackView.addArrangedSubview(self.titleLabel)
+            // Add title if not empty
+            if !self.titleText.isEmpty {
+                self.titleLabel.text = self.titleText
+                self.contentStackView.addArrangedSubview(self.titleLabel)
+                // Reduce spacing after title
+                self.contentStackView.setCustomSpacing(8, after: self.titleLabel)
+            }
 
+            // Add description if present
             if let description = description, !description.isEmpty {
                 self.descriptionLabel.text = description
                 self.contentStackView.addArrangedSubview(self.descriptionLabel)
-                self.contentStackView.setCustomSpacing(16, after: self.descriptionLabel)
+                // Increase spacing before input field
+                if self.showInput {
+                    self.contentStackView.setCustomSpacing(20, after: self.descriptionLabel)
+                } else {
+                    self.contentStackView.setCustomSpacing(16, after: self.descriptionLabel)
+                }
             }
 
+            // Add bullet points if present
             if let points = points, !points.isEmpty {
                 self.bulletPointsStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
                 for point in points {
@@ -176,16 +278,85 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
                     self.bulletPointsStackView.addArrangedSubview(bulletLabel)
                 }
                 self.contentStackView.addArrangedSubview(self.bulletPointsStackView)
+                // Increase spacing before input field if present
+                if self.showInput {
+                    self.contentStackView.setCustomSpacing(20, after: self.bulletPointsStackView)
+                }
             }
 
-            if let buttonText = closeButtonText, !buttonText.isEmpty {
+            // Add input field if needed
+            if self.showInput {
+                passageLogger.info("[BOTTOM SHEET] Adding input field to content stack")
+                self.contentStackView.addArrangedSubview(self.urlTextField)
+
+                // Reset text field
+                self.urlTextField.text = ""
+                self.urlTextFieldChanged() // Update button state
+            }
+
+            // Deactivate existing constraints
+            if let existingBottomConstraint = self.contentStackBottomConstraint {
+                existingBottomConstraint.isActive = false
+            }
+            NSLayoutConstraint.deactivate(self.buttonConstraints)
+            self.buttonConstraints.removeAll()
+
+            if let existingHeightConstraint = self.inputFieldHeightConstraint {
+                existingHeightConstraint.isActive = false
+                self.inputFieldHeightConstraint = nil
+            }
+
+            // Remove button from superview to clean up
+            self.closeButton.removeFromSuperview()
+
+            // Update button
+            if let buttonText = self.closeButtonText, !buttonText.isEmpty {
+                passageLogger.info("[BOTTOM SHEET] Setting up button with text: \(buttonText)")
                 self.closeButton.setTitle(buttonText, for: .normal)
-                if self.closeButton.superview == nil {
-                    self.containerView.addSubview(self.closeButton)
-                    self.closeButton.isHidden = false
+
+                // Update button state for input mode
+                if self.showInput {
+                    self.closeButton.isEnabled = false
+                    self.closeButton.alpha = 0.5
+                } else {
+                    self.closeButton.isEnabled = true
+                    self.closeButton.alpha = 1.0
                 }
+
+                // Add button and set up constraints
+                self.containerView.addSubview(self.closeButton)
+                self.closeButton.isHidden = false
+
+                // Set up constraints for button
+                let stackToButtonConstraint = self.contentStackView.bottomAnchor.constraint(equalTo: self.closeButton.topAnchor, constant: -24)
+                self.contentStackBottomConstraint = stackToButtonConstraint
+
+                let newButtonConstraints = [
+                    stackToButtonConstraint,
+                    self.closeButton.leadingAnchor.constraint(equalTo: self.containerView.leadingAnchor, constant: 16),
+                    self.closeButton.trailingAnchor.constraint(equalTo: self.containerView.trailingAnchor, constant: -16),
+                    self.closeButton.bottomAnchor.constraint(equalTo: self.containerView.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+                    self.closeButton.heightAnchor.constraint(equalToConstant: 50)
+                ]
+                self.buttonConstraints = newButtonConstraints
+                NSLayoutConstraint.activate(newButtonConstraints)
+
+                // Set up input field height constraint if needed
+                if self.showInput {
+                    let heightConstraint = self.urlTextField.heightAnchor.constraint(equalToConstant: 44)
+                    self.inputFieldHeightConstraint = heightConstraint
+                    heightConstraint.isActive = true
+                }
+
+                passageLogger.info("[BOTTOM SHEET] Button and constraints activated")
             } else {
+                passageLogger.info("[BOTTOM SHEET] No button text, hiding button")
                 self.closeButton.isHidden = true
+
+                // Ensure content stack goes to bottom if no button
+                let stackToBottomConstraint = self.contentStackView.bottomAnchor.constraint(equalTo: self.containerView.safeAreaLayoutGuide.bottomAnchor, constant: -12)
+                self.contentStackBottomConstraint = stackToBottomConstraint
+                stackToBottomConstraint.isActive = true
             }
 
             self.view.layoutIfNeeded()
@@ -230,18 +401,26 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
     private func configureSheet() {
         if #available(iOS 15.0, *) {
             if let sheet = sheetPresentationController {
-                sheet.detents = [.medium(), .large()]
+                // Start with medium detent to avoid initial sizing issue
+                sheet.detents = [.medium()]
                 sheet.prefersGrabberVisible = true
                 sheet.prefersScrollingExpandsWhenScrolledToEdge = false
                 sheet.preferredCornerRadius = 16
+                sheet.largestUndimmedDetentIdentifier = .medium
             }
         }
     }
 
     private func updateSheetHeight() {
         if #available(iOS 15.0, *) {
-            guard let sheet = sheetPresentationController else { return }
-            guard let window = view.window else { return }
+            guard let sheet = sheetPresentationController else {
+                passageLogger.warn("[BOTTOM SHEET] No sheet presentation controller")
+                return
+            }
+            guard let window = view.window else {
+                passageLogger.warn("[BOTTOM SHEET] No window available")
+                return
+            }
 
             let screenHeight = window.screen.bounds.height
             let maxHeight = screenHeight * 0.7
@@ -263,23 +442,60 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
 
             let totalHeight = topPadding + contentHeight + bottomPadding + buttonHeight + buttonSpacing + view.safeAreaInsets.bottom + externalBottomMargin
 
+            passageLogger.info("[BOTTOM SHEET] Height calculation:")
+            passageLogger.info("[BOTTOM SHEET]   Content height: \(contentHeight)")
+            passageLogger.info("[BOTTOM SHEET]   Button height: \(buttonHeight)")
+            passageLogger.info("[BOTTOM SHEET]   Total height: \(totalHeight)")
+            passageLogger.info("[BOTTOM SHEET]   Max height: \(maxHeight)")
+            passageLogger.info("[BOTTOM SHEET]   Input field present: \(showInput)")
+
             if totalHeight < maxHeight {
                 if #available(iOS 16.0, *) {
                     let customDetent = UISheetPresentationController.Detent.custom { context in
                         return totalHeight
                     }
-                    sheet.detents = [customDetent]
-                    sheet.selectedDetentIdentifier = customDetent.identifier
+                    // Animate the detent change smoothly
+                    sheet.animateChanges {
+                        sheet.detents = [customDetent]
+                        sheet.selectedDetentIdentifier = customDetent.identifier
+                    }
+                    passageLogger.info("[BOTTOM SHEET] Set custom detent with height: \(totalHeight)")
                 } else {
                     sheet.detents = [.medium()]
+                    passageLogger.info("[BOTTOM SHEET] Set medium detent (iOS 15)")
                 }
+            } else {
+                if #available(iOS 16.0, *) {
+                    sheet.animateChanges {
+                        sheet.detents = [.medium(), .large()]
+                    }
+                } else {
+                    sheet.detents = [.medium(), .large()]
+                }
+                passageLogger.info("[BOTTOM SHEET] Content exceeds max height, using default detents")
             }
         }
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Pre-calculate size before appearing to avoid resize flash
+        view.layoutIfNeeded()
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        // Update sheet height after it's fully presented
         updateSheetHeight()
+    }
+
+    // MARK: - UITextFieldDelegate
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        if showInput, let url = textField.text, isValidURL(url) {
+            closeButtonTapped()
+        }
+        return true
     }
 }
 #endif

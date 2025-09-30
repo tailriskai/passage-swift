@@ -513,14 +513,14 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                     }
                 case PassageConstants.MessageTypes.showBottomSheet:
                     passageLogger.webView("Show bottom sheet requested", webViewType: webViewType)
-                    if let title = body["title"] as? String {
-                        let description = body["description"] as? String
-                        let points = body["points"] as? [String]
-                        let closeButtonText = body["closeButtonText"] as? String
-                        presentBottomSheet(title: title, description: description, points: points, closeButtonText: closeButtonText)
-                    } else {
-                        passageLogger.error("[WEBVIEW] showBottomSheet missing required 'title' parameter")
-                    }
+                    let title = body["title"] as? String
+                    let description = body["description"] as? String
+                    let points = body["points"] as? [String]
+                    let closeButtonText = body["closeButtonText"] as? String
+                    let showInput = body["showInput"] as? Bool ?? false
+                    passageLogger.info("[BOTTOM SHEET JS] Received showInput from JavaScript: \(showInput)")
+                    passageLogger.info("[BOTTOM SHEET JS] Full body: \(body)")
+                    presentBottomSheet(title: title, description: description, points: points, closeButtonText: closeButtonText, showInput: showInput)
                 case PassageConstants.MessageTypes.setTitle:
                     if let title = body["title"] as? String {
                         passageLogger.webView("Set title: \(title)", webViewType: webViewType)
