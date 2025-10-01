@@ -102,6 +102,7 @@ extension WebViewModalViewController {
         passageLogger.debug("Close button tapped, dismissing modal")
 
         closeButtonPressCount = 0
+        isUIWebViewLockedByRecording = false
 
         resetURLState()
 
@@ -347,9 +348,18 @@ extension WebViewModalViewController {
         return isShowingUIWebView ? PassageConstants.WebViewTypes.ui : PassageConstants.WebViewTypes.automation
     }
 
-    @objc func showUIWebViewNotification() {
+    @objc func showUIWebViewNotification(_ notification: Notification) {
         passageLogger.info("[WEBVIEW] Received showUIWebView notification")
         passageLogger.debug("[WEBVIEW] Notification source: \(String(describing: Thread.callStackSymbols[0...3]))")
+
+        // Check if this is a lock request from completeRecording in record mode
+        if let userInfo = notification.userInfo,
+           let lockUIWebView = userInfo["lockUIWebView"] as? Bool,
+           lockUIWebView {
+            passageLogger.info("[WEBVIEW] Locking UI webview - will persist until modal closes")
+            isUIWebViewLockedByRecording = true
+        }
+
         showUIWebView()
     }
 

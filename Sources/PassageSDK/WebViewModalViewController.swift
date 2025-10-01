@@ -37,7 +37,12 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     var onClose: (() -> Void)?
     var onWebviewChange: ((String) -> Void)?
 
-    var remoteControl: RemoteControlManager?
+    var remoteControl: RemoteControlManager? {
+        didSet {
+            // Set the back-reference for record mode UI locking
+            remoteControl?.viewController = self
+        }
+    }
 
     /// Bottom margin for record mode UI (matches React Native SDK)
     var marginBottom: CGFloat = 0 {
@@ -91,6 +96,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     // Popup window management
     var popupWebViews: [PassageWKWebView] = []
     var popupContainerView: UIView?
+
+    // Record mode: Lock UI webview after completeRecording
+    var isUIWebViewLockedByRecording: Bool = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -219,7 +227,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
 
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(showUIWebViewNotification),
+            selector: #selector(showUIWebViewNotification(_:)),
             name: .showUIWebView,
             object: nil
         )

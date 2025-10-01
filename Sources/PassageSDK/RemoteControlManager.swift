@@ -93,6 +93,9 @@ class RemoteControlManager {
     private var lastWaitCommand: RemoteCommand? // Track wait commands for reinjection
     private var onConfigurationUpdated: ((_ userAgent: String, _ integrationUrl: String?) -> Void)?
 
+    // Weak reference to view controller for record mode UI locking
+    weak var viewController: WebViewModalViewController?
+
     // Record mode script reinjection support (matching React Native SDK)
     private var lastInjectScript: String?
     private var lastInjectScriptCommandId: String?
@@ -1637,9 +1640,16 @@ class RemoteControlManager {
         passageLogger.info("[WEBVIEW SWITCH] New userActionRequired: \(userActionRequired)")
         passageLogger.info("[WEBVIEW SWITCH] Current webview type: \(currentWebViewType)")
 
-        // 🔑 RECORD MODE: Always show automation webview if record mode is enabled
+        // 🔑 RECORD MODE: Check if UI webview is locked by completeRecording
         let isRecordMode = getRecordFlag()
         if isRecordMode {
+            // Check if UI webview is locked by completeRecording
+            let isUILocked = viewController?.isUIWebViewLockedByRecording ?? false
+            if isUILocked {
+                passageLogger.info("[WEBVIEW SWITCH] Record mode: UI webview is locked by completeRecording - skipping automatic switch")
+                return
+            }
+
             passageLogger.info("[WEBVIEW SWITCH] Record mode enabled - showing automation webview")
             if currentWebViewType != PassageConstants.WebViewTypes.automation {
                 passageLogger.info("[WEBVIEW SWITCH] Switching to AUTOMATION webview (record mode)")
@@ -2635,16 +2645,23 @@ class RemoteControlManager {
 
         passageLogger.debug("[REMOTE CONTROL] Completing recording for command: \(currentCommand.id)")
 
-        // Switch to UI webview before completing
-        if currentWebViewType != PassageConstants.WebViewTypes.ui {
-            passageLogger.info("[REMOTE CONTROL] Switching to UI webview for recording completion")
+        // Switch to UI webview before completing (only in record mode)
+        let isRecordMode = getRecordFlag()
+        if isRecordMode && currentWebViewType != PassageConstants.WebViewTypes.ui {
+            passageLogger.info("[REMOTE CONTROL] Record mode: Switching to UI webview for recording completion and locking it")
             DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .showUIWebView, object: nil)
+                NotificationCenter.default.post(
+                    name: .showUIWebView,
+                    object: nil,
+                    userInfo: ["lockUIWebView": true]
+                )
             }
             currentWebViewType = PassageConstants.WebViewTypes.ui
 
             // Small delay to allow webview transition
             try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
+        } else if !isRecordMode {
+            passageLogger.debug("[REMOTE CONTROL] Not in record mode - skipping UI webview switch")
         }
 
         // Collect page data with screenshot based on record flag (whole UI) or captureScreenshot flag (webview only)
