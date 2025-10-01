@@ -617,6 +617,17 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                         }
                     }
 
+                case "changeAutomationUserAgent":
+                    passageLogger.info("[WEBVIEW] changeAutomationUserAgent called from \(webViewType) webview")
+
+                    guard let userAgent = body["userAgent"] as? String else {
+                        passageLogger.error("[WEBVIEW] changeAutomationUserAgent missing userAgent parameter")
+                        return
+                    }
+
+                    passageLogger.debug("[WEBVIEW] changeAutomationUserAgent - new user agent: \(userAgent)")
+                    changeAutomationUserAgentAndReload(userAgent)
+
                 case "CLOSE_CONFIRMED":
                     passageLogger.info("[WEBVIEW] Close confirmation received - proceeding with close")
                     DispatchQueue.main.async {

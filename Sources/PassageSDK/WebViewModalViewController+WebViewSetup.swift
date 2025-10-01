@@ -645,6 +645,25 @@ extension WebViewModalViewController {
                   } catch (error) {
                     console.error('[Passage] Error showing bottom sheet:', error);
                   }
+                },
+
+                changeAutomationUserAgent: function(userAgent) {
+                  console.log('[Passage] changeAutomationUserAgent called with:', userAgent);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'changeAutomationUserAgent',
+                        userAgent: userAgent,
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      });
+                      console.log('[Passage] changeAutomationUserAgent request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for changeAutomationUserAgent');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error changing user agent:', error);
+                  }
                 }
               };
 
@@ -959,6 +978,41 @@ extension WebViewModalViewController {
         }
     }
 
+    func changeAutomationUserAgentAndReload(_ userAgent: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            passageLogger.info("[WEBVIEW] Changing automation user agent and reloading: \(userAgent)")
+
+            // Store the user agent so it persists until modal/session closes
+            self.automationUserAgent = userAgent.isEmpty ? nil : userAgent
+
+            guard let automationWebView = self.automationWebView else {
+                passageLogger.error("[WEBVIEW] Cannot change user agent - automation webview does not exist")
+                return
+            }
+
+            // Get current URL to reload
+            guard let currentUrl = automationWebView.url?.absoluteString else {
+                passageLogger.error("[WEBVIEW] Cannot reload - automation webview has no URL")
+                return
+            }
+
+            // Apply new user agent
+            automationWebView.customUserAgent = userAgent
+            passageLogger.debug("[WEBVIEW] Applied new user agent to automation webview")
+
+            // Reload the page with the new user agent
+            if let url = URL(string: currentUrl) {
+                let request = URLRequest(url: url)
+                automationWebView.load(request)
+                passageLogger.info("[WEBVIEW] Reloading automation webview with new user agent")
+            } else {
+                passageLogger.error("[WEBVIEW] Failed to create URL from: \(currentUrl)")
+            }
+        }
+    }
+
     func setAutomationUrl(_ url: String) {
         passageLogger.info("[WEBVIEW] ========== SET AUTOMATION URL CALLED ==========")
         passageLogger.info("[WEBVIEW] 🚀 setAutomationUrl called with: \(passageLogger.truncateUrl(url, maxLength: 100))")
@@ -1078,6 +1132,10 @@ extension WebViewModalViewController {
     func releaseWebViews() {
         passageLogger.info("[WEBVIEW] 🗑️ Releasing WebView instances to free JavaScriptCore memory")
         passageLogger.info("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
+
+        // Reset user agent when session closes
+        automationUserAgent = nil
+        passageLogger.debug("[WEBVIEW] Reset automation user agent on webview release")
 
         if Thread.isMainThread {
             performWebViewRelease()
