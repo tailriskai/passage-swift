@@ -15,6 +15,25 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
     private var buttonConstraints: [NSLayoutConstraint] = []
     private var inputFieldHeightConstraint: NSLayoutConstraint?
 
+    // Element heights (for reference, not used in calculation)
+    private let inputFieldHeight: CGFloat = 44
+    private let buttonHeight: CGFloat = 50
+    private let topPadding: CGFloat = 24
+    private let bottomPadding: CGFloat = 12
+    private let buttonSpacing: CGFloat = 24
+
+    private var hasConfiguredSheetDetent = false
+    private var currentDetentHeight: CGFloat = 0
+
+    private lazy var scrollView: UIScrollView = {
+        let scrollView = UIScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.keyboardDismissMode = .interactive
+        scrollView.alwaysBounceVertical = false
+        return scrollView
+    }()
+
     private lazy var containerView: UIView = {
         let view = UIView()
         view.backgroundColor = .systemBackground
@@ -112,7 +131,10 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
         view.backgroundColor = .systemBackground
         presentationController?.delegate = self
         setupUI()
-        configureSheet()
+    }
+
+    deinit {
+        // Clean up if needed
     }
 
     func presentationControllerShouldDismiss(_ presentationController: UIPresentationController) -> Bool {
@@ -120,7 +142,8 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
     }
 
     private func setupUI() {
-        view.addSubview(containerView)
+        view.addSubview(scrollView)
+        scrollView.addSubview(containerView)
         containerView.addSubview(contentStackView)
 
         if !titleText.isEmpty {
@@ -161,12 +184,21 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
         }
 
         var constraints = [
-            containerView.topAnchor.constraint(equalTo: view.topAnchor),
-            containerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            containerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            containerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            // Scroll view constraints to view
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            contentStackView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 12),
+            // Container view constraints to scroll view
+            containerView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            containerView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            containerView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            containerView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            containerView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+
+            // Content stack view constraints to container
+            contentStackView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: topPadding),
             contentStackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
             contentStackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16)
         ]
@@ -179,26 +211,26 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
             }
             containerView.addSubview(closeButton)
 
-            let stackToButtonConstraint = contentStackView.bottomAnchor.constraint(equalTo: closeButton.topAnchor, constant: -24)
+            let stackToButtonConstraint = contentStackView.bottomAnchor.constraint(equalTo: closeButton.topAnchor, constant: -buttonSpacing)
             contentStackBottomConstraint = stackToButtonConstraint
 
             let newButtonConstraints = [
                 stackToButtonConstraint,
                 closeButton.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
                 closeButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
-                closeButton.bottomAnchor.constraint(equalTo: containerView.safeAreaLayoutGuide.bottomAnchor, constant: -12),
-                closeButton.heightAnchor.constraint(equalToConstant: 50)
+                closeButton.bottomAnchor.constraint(equalTo: containerView.safeAreaLayoutGuide.bottomAnchor, constant: -bottomPadding),
+                closeButton.heightAnchor.constraint(equalToConstant: buttonHeight)
             ]
             buttonConstraints = newButtonConstraints
             constraints.append(contentsOf: newButtonConstraints)
         } else {
-            let stackToBottomConstraint = contentStackView.bottomAnchor.constraint(equalTo: containerView.safeAreaLayoutGuide.bottomAnchor, constant: -12)
+            let stackToBottomConstraint = contentStackView.bottomAnchor.constraint(equalTo: containerView.safeAreaLayoutGuide.bottomAnchor, constant: -bottomPadding)
             contentStackBottomConstraint = stackToBottomConstraint
             constraints.append(stackToBottomConstraint)
         }
 
         if showInput {
-            let heightConstraint = urlTextField.heightAnchor.constraint(equalToConstant: 44)
+            let heightConstraint = urlTextField.heightAnchor.constraint(equalToConstant: inputFieldHeight)
             inputFieldHeightConstraint = heightConstraint
             constraints.append(heightConstraint)
         }
@@ -331,22 +363,22 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
                 self.closeButton.isHidden = false
 
                 // Set up constraints for button
-                let stackToButtonConstraint = self.contentStackView.bottomAnchor.constraint(equalTo: self.closeButton.topAnchor, constant: -24)
+                let stackToButtonConstraint = self.contentStackView.bottomAnchor.constraint(equalTo: self.closeButton.topAnchor, constant: -self.buttonSpacing)
                 self.contentStackBottomConstraint = stackToButtonConstraint
 
                 let newButtonConstraints = [
                     stackToButtonConstraint,
                     self.closeButton.leadingAnchor.constraint(equalTo: self.containerView.leadingAnchor, constant: 16),
                     self.closeButton.trailingAnchor.constraint(equalTo: self.containerView.trailingAnchor, constant: -16),
-                    self.closeButton.bottomAnchor.constraint(equalTo: self.containerView.safeAreaLayoutGuide.bottomAnchor, constant: -12),
-                    self.closeButton.heightAnchor.constraint(equalToConstant: 50)
+                    self.closeButton.bottomAnchor.constraint(equalTo: self.containerView.safeAreaLayoutGuide.bottomAnchor, constant: -self.bottomPadding),
+                    self.closeButton.heightAnchor.constraint(equalToConstant: self.buttonHeight)
                 ]
                 self.buttonConstraints = newButtonConstraints
                 NSLayoutConstraint.activate(newButtonConstraints)
 
                 // Set up input field height constraint if needed
                 if self.showInput {
-                    let heightConstraint = self.urlTextField.heightAnchor.constraint(equalToConstant: 44)
+                    let heightConstraint = self.urlTextField.heightAnchor.constraint(equalToConstant: self.inputFieldHeight)
                     self.inputFieldHeightConstraint = heightConstraint
                     heightConstraint.isActive = true
                 }
@@ -357,13 +389,14 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
                 self.closeButton.isHidden = true
 
                 // Ensure content stack goes to bottom if no button
-                let stackToBottomConstraint = self.contentStackView.bottomAnchor.constraint(equalTo: self.containerView.safeAreaLayoutGuide.bottomAnchor, constant: -12)
+                let stackToBottomConstraint = self.contentStackView.bottomAnchor.constraint(equalTo: self.containerView.safeAreaLayoutGuide.bottomAnchor, constant: -self.bottomPadding)
                 self.contentStackBottomConstraint = stackToBottomConstraint
                 stackToBottomConstraint.isActive = true
             }
 
             self.view.layoutIfNeeded()
-            self.updateSheetHeight()
+            self.scrollView.layoutIfNeeded()
+            self.configureSheetIfNeeded(force: true)
         }
     }
 
@@ -401,90 +434,75 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
         return container
     }
 
-    private func configureSheet() {
-        if #available(iOS 15.0, *) {
-            if let sheet = sheetPresentationController {
-                if #available(iOS 16.0, *) {
-                    // Start with a small fixed height
-                    let initialDetent = UISheetPresentationController.Detent.custom { context in
-                        return 200
-                    }
-                    sheet.detents = [initialDetent]
-                    sheet.selectedDetentIdentifier = initialDetent.identifier
-                } else {
-                    sheet.detents = [.medium()]
-                }
-                sheet.prefersGrabberVisible = true
-                sheet.prefersScrollingExpandsWhenScrolledToEdge = false
-                sheet.preferredCornerRadius = 16
+    private func configureSheetIfNeeded(force: Bool = false) {
+        guard #available(iOS 15.0, *) else { return }
+        guard let sheet = sheetPresentationController else {
+            passageLogger.warn("[BOTTOM SHEET] No sheet presentation controller")
+            return
+        }
+
+        let availableWidth = view.bounds.width
+        guard availableWidth > 0 else { return }
+
+        let preferredHeight = calculatePreferredHeight(for: availableWidth)
+
+        if !force, hasConfiguredSheetDetent, abs(preferredHeight - currentDetentHeight) < 1 {
+            return
+        }
+
+        currentDetentHeight = preferredHeight
+        hasConfiguredSheetDetent = true
+
+        sheet.prefersGrabberVisible = true
+        sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+        sheet.preferredCornerRadius = 16
+        sheet.largestUndimmedDetentIdentifier = nil
+
+        // Enable proper keyboard avoidance
+        if #available(iOS 16.0, *) {
+            sheet.prefersEdgeAttachedInCompactHeight = true
+        }
+
+        if #available(iOS 16.0, *) {
+            let identifier = UISheetPresentationController.Detent.Identifier("passage.compact.bottomsheet")
+            let customDetent = UISheetPresentationController.Detent.custom(identifier: identifier) { context in
+                min(preferredHeight, context.maximumDetentValue)
             }
+            sheet.detents = [customDetent]
+            sheet.selectedDetentIdentifier = identifier
+        } else {
+            preferredContentSize = CGSize(width: availableWidth, height: preferredHeight)
+            sheet.detents = [.medium()]
         }
     }
 
-    private func updateSheetHeight() {
-        if #available(iOS 15.0, *) {
-            guard let sheet = sheetPresentationController else {
-                passageLogger.warn("[BOTTOM SHEET] No sheet presentation controller")
-                return
-            }
-            guard let window = view.window else {
-                passageLogger.warn("[BOTTOM SHEET] No window available")
-                return
-            }
+    private func calculatePreferredHeight(for width: CGFloat) -> CGFloat {
+        view.layoutIfNeeded()
 
-            let screenHeight = window.screen.bounds.height
-            let maxHeight = screenHeight * 0.7
+        let horizontalPadding: CGFloat = 32 // 16 leading + 16 trailing
+        let targetWidth = max(width - horizontalPadding, 0)
+        let fittingSize = CGSize(width: targetWidth, height: UIView.layoutFittingCompressedSize.height)
 
-            view.layoutIfNeeded()
+        let stackHeight = contentStackView.systemLayoutSizeFitting(
+            fittingSize,
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        ).height
 
-            let contentWidth = view.bounds.width - 32
-            let contentHeight = contentStackView.systemLayoutSizeFitting(
-                CGSize(width: contentWidth, height: UIView.layoutFittingCompressedSize.height),
-                withHorizontalFittingPriority: .required,
-                verticalFittingPriority: .fittingSizeLevel
-            ).height
+        var totalHeight = topPadding + stackHeight
 
-            let topPadding: CGFloat = 12
-            let bottomPadding: CGFloat = (closeButtonText != nil && !closeButtonText!.isEmpty) ? 12 : 12
-            let buttonHeight: CGFloat = (closeButtonText != nil && !closeButtonText!.isEmpty) ? 50 : 0
-            let buttonSpacing: CGFloat = buttonHeight > 0 ? 24 : 0
-            let externalBottomMargin: CGFloat = 24
-
-            let totalHeight = topPadding + contentHeight + bottomPadding + buttonHeight + buttonSpacing + view.safeAreaInsets.bottom + externalBottomMargin
-
-            passageLogger.info("[BOTTOM SHEET] Height calculation:")
-            passageLogger.info("[BOTTOM SHEET]   Content height: \(contentHeight)")
-            passageLogger.info("[BOTTOM SHEET]   Button height: \(buttonHeight)")
-            passageLogger.info("[BOTTOM SHEET]   Total height: \(totalHeight)")
-            passageLogger.info("[BOTTOM SHEET]   Max height: \(maxHeight)")
-            passageLogger.info("[BOTTOM SHEET]   Input field present: \(showInput)")
-
-            if totalHeight < maxHeight {
-                if #available(iOS 16.0, *) {
-                    let customDetent = UISheetPresentationController.Detent.custom { context in
-                        return totalHeight
-                    }
-                    // Animate the detent change smoothly
-                    sheet.animateChanges {
-                        sheet.detents = [customDetent]
-                        sheet.selectedDetentIdentifier = customDetent.identifier
-                    }
-                    passageLogger.info("[BOTTOM SHEET] Set custom detent with height: \(totalHeight)")
-                } else {
-                    sheet.detents = [.medium()]
-                    passageLogger.info("[BOTTOM SHEET] Set medium detent (iOS 15)")
-                }
-            } else {
-                if #available(iOS 16.0, *) {
-                    sheet.animateChanges {
-                        sheet.detents = [.medium(), .large()]
-                    }
-                } else {
-                    sheet.detents = [.medium(), .large()]
-                }
-                passageLogger.info("[BOTTOM SHEET] Content exceeds max height, using default detents")
-            }
+        if let buttonText = closeButtonText, !buttonText.isEmpty {
+            totalHeight += buttonSpacing + buttonHeight + bottomPadding
+        } else {
+            totalHeight += bottomPadding
         }
+
+        return totalHeight
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        configureSheetIfNeeded()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -495,10 +513,7 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // Animate expansion to content size after a brief delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.updateSheetHeight()
-        }
+        // Sheet height is already set, no need to update
     }
 
     // MARK: - UITextFieldDelegate
