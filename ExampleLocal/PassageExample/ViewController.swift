@@ -16,9 +16,16 @@ class ViewController: UIViewController {
     private var clearCookiesSwitch: UISwitch!
     private var clearCookiesLabel: UILabel!
     private var clearCookiesStackView: UIStackView!
+    private var recordModeSwitch: UISwitch!
+    private var recordModeLabel: UILabel!
+    private var recordModeStackView: UIStackView!
     private var selectedIntegration: String = "kroger"
     private var exitCallCount: Int = 0  // Track onExit callback calls
     private var isInitialized: Bool = false  // Track SDK initialization state
+
+    // Record mode bottom sheet
+    private var recordModeBottomSheet: RecordModeBottomSheet?
+    private var isRecordModeActive = false
     
     // Constraint references for dynamic layout
     private var connectButtonTopConstraint: NSLayoutConstraint!
@@ -151,6 +158,33 @@ class ViewController: UIViewController {
         spacerView.translatesAutoresizingMaskIntoConstraints = false
         clearCookiesStackView.addArrangedSubview(spacerView)
 
+        // Record Mode Stack View (for auto-fetch mode)
+        recordModeStackView = UIStackView()
+        recordModeStackView.axis = .horizontal
+        recordModeStackView.spacing = 12
+        recordModeStackView.alignment = .center
+        recordModeStackView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(recordModeStackView)
+
+        // Record Mode Switch
+        recordModeSwitch = UISwitch()
+        recordModeSwitch.isOn = false
+        recordModeSwitch.translatesAutoresizingMaskIntoConstraints = false
+        recordModeStackView.addArrangedSubview(recordModeSwitch)
+
+        // Record Mode Label
+        recordModeLabel = UILabel()
+        recordModeLabel.text = "Record mode"
+        recordModeLabel.font = .systemFont(ofSize: 16)
+        recordModeLabel.textColor = .label
+        recordModeLabel.translatesAutoresizingMaskIntoConstraints = false
+        recordModeStackView.addArrangedSubview(recordModeLabel)
+
+        // Add spacer to push content to the left
+        let recordSpacerView = UIView()
+        recordSpacerView.translatesAutoresizingMaskIntoConstraints = false
+        recordModeStackView.addArrangedSubview(recordSpacerView)
+
         // Token Label
         tokenLabel = UILabel()
         tokenLabel.text = "Intent Token:"
@@ -232,7 +266,7 @@ class ViewController: UIViewController {
 
         // Set up constraints
         // Create dynamic constraints for button positioning
-        connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: clearCookiesStackView.bottomAnchor, constant: 30)
+        connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: recordModeStackView.bottomAnchor, constant: 30)
         initializeButtonTopConstraint = initializeButton.topAnchor.constraint(equalTo: tokenTextView.bottomAnchor, constant: 20)
         resultTextViewTopConstraint = resultTextView.topAnchor.constraint(equalTo: connectButton.bottomAnchor, constant: 20)
 
@@ -262,6 +296,11 @@ class ViewController: UIViewController {
             clearCookiesStackView.topAnchor.constraint(equalTo: integrationButton.bottomAnchor, constant: 16),
             clearCookiesStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             clearCookiesStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+
+            // Record Mode Stack View (for auto-fetch mode)
+            recordModeStackView.topAnchor.constraint(equalTo: clearCookiesStackView.bottomAnchor, constant: 12),
+            recordModeStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            recordModeStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
 
             // Token Label (for manual mode)
             tokenLabel.topAnchor.constraint(equalTo: modeSegmentedControl.bottomAnchor, constant: 20),
@@ -342,6 +381,7 @@ class ViewController: UIViewController {
         integrationLabel.isHidden = isManualMode
         integrationButton.isHidden = isManualMode
         clearCookiesStackView.isHidden = isManualMode
+        recordModeStackView.isHidden = isManualMode
 
         // Update button positioning constraints
         connectButtonTopConstraint.isActive = false
@@ -352,8 +392,8 @@ class ViewController: UIViewController {
             connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: tokenTextView.bottomAnchor, constant: 20)
             initializeButtonTopConstraint = initializeButton.topAnchor.constraint(equalTo: tokenTextView.bottomAnchor, constant: 20)
         } else {
-            // In auto-fetch mode, position connect button below clear cookies stack view
-            connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: clearCookiesStackView.bottomAnchor, constant: 30)
+            // In auto-fetch mode, position connect button below record mode stack view
+            connectButtonTopConstraint = connectButton.topAnchor.constraint(equalTo: recordModeStackView.bottomAnchor, constant: 30)
             // Initialize button constraint doesn't matter in auto-fetch mode since it's hidden
             initializeButtonTopConstraint = initializeButton.topAnchor.constraint(equalTo: tokenTextView.bottomAnchor, constant: 20)
         }
@@ -519,7 +559,7 @@ class ViewController: UIViewController {
         print("Intent token length: \(intentToken.count)")
         print("Using API-fetched intent token")
 
-        // Parse JWT to check expiration
+        // Parse JWT to check expiration and record mode
         let parts = intentToken.components(separatedBy: ".")
         if parts.count == 3 {
             let payload = parts[1]
@@ -536,7 +576,75 @@ class ViewController: UIViewController {
                     print("  - expires: \(expDate)")
                     print("  - is expired: \(expDate < Date())")
                 }
+
+                // 🔑 Check for record mode flag
+                if let recordFlag = json["record"] as? Bool, recordFlag {
+                    print("  - ✅ RECORD MODE ENABLED")
+                    isRecordModeActive = true
+                } else {
+                    print("  - record mode: false")
+                    isRecordModeActive = false
+                }
             }
+        }
+    }
+
+    private func showRecordModeBottomSheet() {
+        guard isRecordModeActive else {
+            print("[RecordMode] Not in record mode, skipping bottom sheet")
+            return
+        }
+
+        print("[RecordMode] Showing record mode bottom sheet")
+
+        // Create bottom sheet if needed
+        if recordModeBottomSheet == nil {
+            recordModeBottomSheet = RecordModeBottomSheet()
+            recordModeBottomSheet?.onRecordingComplete = { [weak self] in
+                print("[RecordMode] Recording completed via bottom sheet")
+                self?.hideRecordModeBottomSheet()
+            }
+        }
+
+        guard let bottomSheet = recordModeBottomSheet else { return }
+        guard let window = view.window else {
+            print("[RecordMode] No window available, cannot show bottom sheet")
+            return
+        }
+
+        // Add to window so it appears on top of everything
+        window.addSubview(bottomSheet.view)
+
+        // Position at bottom of window
+        bottomSheet.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            bottomSheet.view.leadingAnchor.constraint(equalTo: window.leadingAnchor),
+            bottomSheet.view.trailingAnchor.constraint(equalTo: window.trailingAnchor),
+            bottomSheet.view.bottomAnchor.constraint(equalTo: window.bottomAnchor),
+            bottomSheet.view.heightAnchor.constraint(equalToConstant: 240)
+        ])
+
+        // Bring to front
+        window.bringSubviewToFront(bottomSheet.view)
+
+        // Animate in
+        bottomSheet.view.transform = CGAffineTransform(translationX: 0, y: 240)
+        UIView.animate(withDuration: 0.3, delay: 0, options: .curveEaseOut) {
+            bottomSheet.view.transform = CGAffineTransform.identity
+        }
+    }
+
+    private func hideRecordModeBottomSheet() {
+        guard let bottomSheet = recordModeBottomSheet else { return }
+
+        print("[RecordMode] Hiding record mode bottom sheet")
+
+        UIView.animate(withDuration: 0.3, delay: 0, options: .curveEaseIn, animations: {
+            bottomSheet.view.transform = CGAffineTransform(translationX: 0, y: 240)
+        }) { (_: Bool) in
+            bottomSheet.willMove(toParent: nil)
+            bottomSheet.view.removeFromSuperview()
+            bottomSheet.removeFromParent()
         }
     }
 
@@ -779,6 +887,11 @@ class ViewController: UIViewController {
             requestBody["clearAllCookies"] = true
         }
 
+        // 🔑 Add record mode flag if the switch is on
+        if recordModeSwitch.isOn {
+            requestBody["record"] = true
+        }
+
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: requestBody)
             request.httpBody = jsonData
@@ -918,10 +1031,20 @@ class ViewController: UIViewController {
             onWebviewChange: { [weak self] (webviewType: String) in
                 print("\n🔄 WEBVIEW CHANGE CALLBACK TRIGGERED - Type: \(webviewType)")
                 self?.handleWebviewChange(webviewType)
-            }
+            },
+            // 🔑 Add margin at bottom if record mode is active (for record indicator)
+            marginBottom: isRecordModeActive ? 240 : nil
         )
 
         print("Passage.shared.open called, waiting for callbacks...")
+
+        // 🔑 Show record mode indicator immediately if record mode is enabled
+        if isRecordModeActive {
+            print("[RecordMode] Record mode enabled - showing indicator immediately")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.showRecordModeBottomSheet()
+            }
+        }
     }
 
     private func handleSuccess(_ data: PassageSuccessData) {
@@ -989,8 +1112,18 @@ class ViewController: UIViewController {
             // Update UI to reflect webview change if needed
             if webviewType == "automation" {
                 self?.connectButton.setTitle("Automation Active", for: .normal)
+
+                // 🔑 Show record mode bottom sheet when switching to automation webview
+                // (if not already showing - the indicator may have been shown immediately on open)
+                self?.showRecordModeBottomSheet()
             } else {
                 self?.connectButton.setTitle("Opening Passage...", for: .normal)
+
+                // 🔑 Keep record mode indicator visible if record mode is active
+                // Don't hide it when switching back to UI webview
+                if self?.isRecordModeActive == false {
+                    self?.hideRecordModeBottomSheet()
+                }
             }
         }
     }
@@ -998,6 +1131,9 @@ class ViewController: UIViewController {
     private func handleClose() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+
+            // 🔑 Hide record mode bottom sheet on close
+            self.hideRecordModeBottomSheet()
 
             let isManualMode = self.modeSegmentedControl.selectedSegmentIndex == 1
 

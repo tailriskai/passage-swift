@@ -1,5 +1,5 @@
 {
-  "originHash" : "7b0161c161ed52f6464444a16a824b688708d105a2dfc01c2353d4d66ad66218",
+  "originHash" : "54e0feaf2e3806570b0103090975a707293bb900224a0bd4ea1a1c03d16e7d52",
   "pins" : [
     {
       "identity" : "socket.io-client-swift",

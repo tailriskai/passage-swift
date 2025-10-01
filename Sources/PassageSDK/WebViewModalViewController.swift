@@ -39,8 +39,18 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
 
     var remoteControl: RemoteControlManager?
 
+    /// Bottom margin for record mode UI (matches React Native SDK)
+    var marginBottom: CGFloat = 0 {
+        didSet {
+            updateAutomationWebViewConstraints()
+        }
+    }
+
     var uiWebView: PassageWKWebView!
     var automationWebView: PassageWKWebView!
+
+    // Constraints for automation webview (needed for marginBottom updates)
+    var automationWebViewBottomConstraint: NSLayoutConstraint?
 
     var currentURL: String = ""
     var isShowingUIWebView: Bool = true
@@ -290,6 +300,26 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
             delegate.webViewModalDidClose()
         } else {
             passageLogger.error("[WEBVIEW] ❌ No delegate to call webViewModalDidClose()!")
+        }
+    }
+
+    // MARK: - Record Mode UI Support
+
+    /// Update automation webview constraints for marginBottom (matches React Native SDK)
+    private func updateAutomationWebViewConstraints() {
+        guard let constraint = automationWebViewBottomConstraint else {
+            passageLogger.debug("[WEBVIEW] No automation webview bottom constraint to update")
+            return
+        }
+
+        passageLogger.debug("[WEBVIEW] Updating automation webview margin bottom to: \(marginBottom)")
+
+        // Update constraint constant
+        constraint.constant = -marginBottom
+
+        // Animate the change
+        UIView.animate(withDuration: 0.3) { [weak self] in
+            self?.view.layoutIfNeeded()
         }
     }
 }

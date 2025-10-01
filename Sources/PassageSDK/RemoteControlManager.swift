@@ -92,6 +92,11 @@ class RemoteControlManager {
     private var currentCommand: RemoteCommand?
     private var lastWaitCommand: RemoteCommand? // Track wait commands for reinjection
     private var onConfigurationUpdated: ((_ userAgent: String, _ integrationUrl: String?) -> Void)?
+
+    // Record mode script reinjection support (matching React Native SDK)
+    private var lastInjectScript: String?
+    private var lastInjectScriptCommandId: String?
+    private var lastInjectScriptCommand: RemoteCommand?
     
     // Success URLs for navigation commands
     private var currentSuccessUrls: [SuccessUrl] = []
@@ -205,25 +210,61 @@ class RemoteControlManager {
     // Add method to handle navigation completion from WebView (matches React Native)
     func handleNavigationComplete(_ url: String) {
         passageLogger.debug("[REMOTE CONTROL] Navigation complete called for URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
-        
+
         // Handle navigation command completion
         if let command = currentCommand, command.type == .navigate {
             passageLogger.info("[REMOTE CONTROL] Completing navigation command: \(command.id)")
             sendSuccess(commandId: command.id, data: ["url": url])
             currentCommand = nil
         }
-        
-        // Check if we need to reinject a wait command after navigation
-        if let waitCommand = lastWaitCommand {
-            passageLogger.info("[REMOTE CONTROL] Re-injecting wait command after navigation: \(waitCommand.id)")
-            
+
+        // 🔑 RECORD MODE: Reinject injectScript commands after navigation
+        let isRecordMode = getRecordFlag()
+        passageLogger.debug("[REMOTE CONTROL] Record mode: \(isRecordMode), has injectScriptCommand: \(lastInjectScriptCommand != nil)")
+
+        if isRecordMode, let injectScriptCommand = lastInjectScriptCommand, injectScriptCommand.type == .injectScript {
+            passageLogger.info("[REMOTE CONTROL] Re-injecting injectScript command after navigation (record mode): \(injectScriptCommand.id)")
+
             // Add a delay to ensure page is fully loaded before reinjecting
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.handleScriptExecution(waitCommand)
+                self.handleScriptExecution(injectScriptCommand)
+            }
+        } else {
+            // Fallback to wait command reinjection for backward compatibility
+            if let waitCommand = lastWaitCommand {
+                passageLogger.info("[REMOTE CONTROL] Re-injecting wait command after navigation: \(waitCommand.id)")
+
+                // Add a delay to ensure page is fully loaded before reinjecting
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.handleScriptExecution(waitCommand)
+                }
             }
         }
     }
-    
+
+    // MARK: - Record Mode Script Reinjection
+
+    /// Determine if scripts should be reinjected after navigation (matches React Native SDK)
+    private func shouldReinjectScript() -> Bool {
+        let isRecordMode = getRecordFlag()
+        let hasUserActionCommand = lastUserActionCommand != nil
+
+        // 🔑 In record mode, reinject on all navigation changes
+        if isRecordMode {
+            passageLogger.debug("[REMOTE CONTROL] shouldReinjectScript: true (record mode)")
+            return true
+        }
+
+        // In non-record mode, only reinject for user action commands
+        if hasUserActionCommand && currentCommand != nil {
+            passageLogger.debug("[REMOTE CONTROL] shouldReinjectScript: true (user action command)")
+            return true
+        }
+
+        passageLogger.debug("[REMOTE CONTROL] shouldReinjectScript: false")
+        return false
+    }
+
     @objc private func handleScriptExecutionResult(_ notification: Notification) {
         guard let commandId = notification.userInfo?["commandId"] as? String,
               let success = notification.userInfo?["success"] as? Bool else {
@@ -1595,7 +1636,23 @@ class RemoteControlManager {
         passageLogger.info("[WEBVIEW SWITCH] ========== USER ACTION REQUIRED CHANGE ==========")
         passageLogger.info("[WEBVIEW SWITCH] New userActionRequired: \(userActionRequired)")
         passageLogger.info("[WEBVIEW SWITCH] Current webview type: \(currentWebViewType)")
-        
+
+        // 🔑 RECORD MODE: Always show automation webview if record mode is enabled
+        let isRecordMode = getRecordFlag()
+        if isRecordMode {
+            passageLogger.info("[WEBVIEW SWITCH] Record mode enabled - showing automation webview")
+            if currentWebViewType != PassageConstants.WebViewTypes.automation {
+                passageLogger.info("[WEBVIEW SWITCH] Switching to AUTOMATION webview (record mode)")
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .showAutomationWebView, object: nil)
+                }
+                currentWebViewType = PassageConstants.WebViewTypes.automation
+            } else {
+                passageLogger.info("[WEBVIEW SWITCH] Already showing automation webview")
+            }
+            return
+        }
+
         if userActionRequired {
             // User needs to interact - show automation webview
             if currentWebViewType != PassageConstants.WebViewTypes.automation {
@@ -1659,18 +1716,32 @@ class RemoteControlManager {
         passageLogger.debug("[COMMAND HANDLER]   - User action required: \(command.userActionRequired ?? false)")
         
         // Note: Webview switching is now handled by the connection event, not individual commands
-        
+
         // Store user action commands for potential re-execution
         if command.userActionRequired == true {
             lastUserActionCommand = command
+            passageLogger.debug("[REMOTE CONTROL] Stored user action command for re-execution: \(command.id)")
         }
-        
-        // Store wait commands for potential reinjection after navigation
+
+        // 🔑 RECORD MODE: Store inject script for ALL commands that have one (for record mode reinjection)
+        if let injectScript = command.injectScript {
+            lastInjectScript = injectScript
+            lastInjectScriptCommandId = command.id
+            passageLogger.debug("[REMOTE CONTROL] Stored inject script for potential re-execution - type: \(command.type.rawValue), id: \(command.id), isRecordMode: \(getRecordFlag())")
+        }
+
+        // 🔑 RECORD MODE: Store injectScript commands specifically for record mode reinjection
+        if command.type == .injectScript {
+            lastInjectScriptCommand = command
+            passageLogger.debug("[REMOTE CONTROL] Stored injectScript command for record mode: \(command.id)")
+        }
+
+        // Store wait commands for potential reinjection after navigation (backward compatibility)
         if command.type == .wait {
             lastWaitCommand = command
             passageLogger.debug("[REMOTE CONTROL] Stored wait command for potential reinjection: \(command.id)")
         }
-        
+
         // Store current command (matches React Native implementation)
         currentCommand = command
         

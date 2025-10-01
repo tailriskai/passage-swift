@@ -313,6 +313,10 @@ extension WebViewModalViewController {
         view.addSubview(uiWebView)
         view.addSubview(automationWebView)
 
+        // 🔑 RECORD MODE: Save reference to automation webview bottom constraint for marginBottom updates
+        let automationBottom = automationWebView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -marginBottom)
+        automationWebViewBottomConstraint = automationBottom
+
         NSLayoutConstraint.activate([
             uiWebView.topAnchor.constraint(equalTo: headerContainer!.bottomAnchor),
             uiWebView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -322,7 +326,7 @@ extension WebViewModalViewController {
             automationWebView.topAnchor.constraint(equalTo: headerContainer!.bottomAnchor),
             automationWebView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             automationWebView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            automationWebView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+            automationBottom
         ])
 
         uiWebView.alpha = 1

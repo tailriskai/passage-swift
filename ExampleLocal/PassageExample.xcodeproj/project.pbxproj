@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CD10273AF5B3D940D4954593 /* RecordModeBottomSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA920B6E666AC4CB8923790 /* RecordModeBottomSheet.swift */; };
 		2F4B8E1A2C8A4B0000123456 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4B8E192C8A4B0000123456 /* AppDelegate.swift */; };
 		2F4B8E1C2C8A4B0000123456 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4B8E1B2C8A4B0000123456 /* SceneDelegate.swift */; };
 		2F4B8E1E2C8A4B0000123456 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4B8E1D2C8A4B0000123456 /* ViewController.swift */; };
@@ -25,6 +26,7 @@
 		2F4B8E222C8A4B0000123456 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		2F4B8E252C8A4B0000123456 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		2F4B8E272C8A4B0000123456 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		ABA920B6E666AC4CB8923790 /* RecordModeBottomSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordModeBottomSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -65,7 +67,8 @@
 				2F4B8E222C8A4B0000123456 /* Assets.xcassets */,
 				2F4B8E242C8A4B0000123456 /* LaunchScreen.storyboard */,
 				2F4B8E272C8A4B0000123456 /* Info.plist */,
-			);
+				ABA920B6E666AC4CB8923790 /* RecordModeBottomSheet.swift */,
+				);
 			path = PassageExample;
 			sourceTree = "<group>";
 		};
@@ -149,7 +152,8 @@
 				2F4B8E1E2C8A4B0000123456 /* ViewController.swift in Sources */,
 				2F4B8E1A2C8A4B0000123456 /* AppDelegate.swift in Sources */,
 				2F4B8E1C2C8A4B0000123456 /* SceneDelegate.swift in Sources */,
-			);
+				CD10273AF5B3D940D4954593 /* RecordModeBottomSheet.swift in Sources */,
+				);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */

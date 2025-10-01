@@ -140,7 +140,11 @@ public struct PassageOpenOptions {
     public let onExit: ((String?) -> Void)?
     public let onWebviewChange: ((String) -> Void)?
     public let presentationStyle: PassagePresentationStyle?
-    
+
+    /// Bottom margin for the modal (useful when record mode UI is visible)
+    /// Matches React Native SDK's marginBottom parameter
+    public let marginBottom: CGFloat?
+
     public init(
         intentToken: String? = nil,
         prompts: [PassagePrompt]? = nil,
@@ -150,7 +154,8 @@ public struct PassageOpenOptions {
         onPromptComplete: ((PassagePromptResponse) -> Void)? = nil,
         onExit: ((String?) -> Void)? = nil,
         onWebviewChange: ((String) -> Void)? = nil,
-        presentationStyle: PassagePresentationStyle? = nil
+        presentationStyle: PassagePresentationStyle? = nil,
+        marginBottom: CGFloat? = nil
     ) {
         self.intentToken = intentToken
         self.prompts = prompts
@@ -161,6 +166,7 @@ public struct PassageOpenOptions {
         self.onExit = onExit
         self.onWebviewChange = onWebviewChange
         self.presentationStyle = presentationStyle
+        self.marginBottom = marginBottom
     }
 }
 #endif
@@ -296,7 +302,7 @@ public class Passage: NSObject {
     public func open(_ options: PassageOpenOptions = PassageOpenOptions(), from viewController: UIViewController? = nil) {
         let token = options.intentToken ?? ""
         let presentationStyle = options.presentationStyle ?? .modal
-        
+
         open(
             token: token,
             presentationStyle: presentationStyle,
@@ -306,10 +312,11 @@ public class Passage: NSObject {
             onDataComplete: options.onDataComplete,
             onPromptComplete: options.onPromptComplete,
             onExit: options.onExit,
-            onWebviewChange: options.onWebviewChange
+            onWebviewChange: options.onWebviewChange,
+            marginBottom: options.marginBottom
         )
     }
-    
+
     public func open(
         token: String,
         presentationStyle: PassagePresentationStyle = .modal,
@@ -319,7 +326,8 @@ public class Passage: NSObject {
         onDataComplete: ((PassageDataResult) -> Void)? = nil,
         onPromptComplete: ((PassagePromptResponse) -> Void)? = nil,
         onExit: ((String?) -> Void)? = nil,
-        onWebviewChange: ((String) -> Void)? = nil
+        onWebviewChange: ((String) -> Void)? = nil,
+        marginBottom: CGFloat? = nil
     ) {
         passageLogger.info("[SDK:\(instanceId.prefix(8))] ========== OPEN() CALLED ==========")
         passageLogger.debug("[SDK:\(instanceId.prefix(8))] Token length: \(token.count), Style: \(presentationStyle)")
@@ -466,7 +474,13 @@ public class Passage: NSObject {
             webVC.url = url
             webVC.showGrabber = (presentationStyle == .modal)
             webVC.titleText = PassageConstants.Defaults.modalTitle
-            
+
+            // 🔑 RECORD MODE: Set bottom margin for record mode UI
+            if let marginBottom = marginBottom {
+                webVC.marginBottom = marginBottom
+                passageLogger.debug("[SDK] Set marginBottom: \(marginBottom)")
+            }
+
             passageLogger.debug("[SDK] WebView configured with URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
             let styleString = (presentationStyle == .modal) ? PassageConstants.PresentationStyles.pageSheet : PassageConstants.PresentationStyles.fullScreen
             passageAnalytics.trackModalOpened(presentationStyle: styleString, url: url)
