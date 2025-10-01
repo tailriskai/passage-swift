@@ -1037,14 +1037,6 @@ class ViewController: UIViewController {
         )
 
         print("Passage.shared.open called, waiting for callbacks...")
-
-        // 🔑 Show record mode indicator immediately if record mode is enabled
-        if isRecordModeActive {
-            print("[RecordMode] Record mode enabled - showing indicator immediately")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.showRecordModeBottomSheet()
-            }
-        }
     }
 
     private func handleSuccess(_ data: PassageSuccessData) {
@@ -1113,17 +1105,15 @@ class ViewController: UIViewController {
             if webviewType == "automation" {
                 self?.connectButton.setTitle("Automation Active", for: .normal)
 
-                // 🔑 Show record mode bottom sheet when switching to automation webview
-                // (if not already showing - the indicator may have been shown immediately on open)
-                self?.showRecordModeBottomSheet()
+                // 🔑 Show record mode bottom sheet when automation webview is visible
+                if self?.isRecordModeActive == true {
+                    self?.showRecordModeBottomSheet()
+                }
             } else {
                 self?.connectButton.setTitle("Opening Passage...", for: .normal)
 
-                // 🔑 Keep record mode indicator visible if record mode is active
-                // Don't hide it when switching back to UI webview
-                if self?.isRecordModeActive == false {
-                    self?.hideRecordModeBottomSheet()
-                }
+                // 🔑 Hide record mode indicator when switching to UI webview
+                self?.hideRecordModeBottomSheet()
             }
         }
     }

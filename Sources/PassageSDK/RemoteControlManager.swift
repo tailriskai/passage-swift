@@ -48,7 +48,7 @@ struct CookieData: Codable {
     let expires: Double?
     let secure: Bool?
     let httpOnly: Bool?
-    let sameSite: String?
+    let sameSite: String
 }
 
 struct StorageItem: Codable {
@@ -2021,7 +2021,7 @@ class RemoteControlManager {
                 expires: cookie["expires"] as? Double,
                 secure: cookie["secure"] as? Bool,
                 httpOnly: cookie["httpOnly"] as? Bool,
-                sameSite: cookie["sameSite"] as? String
+                sameSite: cookie["sameSite"] as? String ?? "None"
             )
         }
     }
@@ -2039,7 +2039,7 @@ class RemoteControlManager {
     
     private func getPageData(completion: @escaping (PageData?) -> Void) {
         passageLogger.debug("[REMOTE CONTROL] Collecting page data from automation webview...")
-        
+
         // JavaScript to collect page data (matching React Native implementation)
         let pageDataScript = """
         (function() {
@@ -2049,20 +2049,20 @@ class RemoteControlManager {
                     const key = localStorage.key(i);
                     localStorageItems.push({ name: key, value: localStorage.getItem(key) });
                 }
-                
+
                 const sessionStorageItems = [];
                 for (let i = 0; i < sessionStorage.length; i++) {
                     const key = sessionStorage.key(i);
                     sessionStorageItems.push({ name: key, value: sessionStorage.getItem(key) });
                 }
-                
+
                 const result = {
                     url: window.location.href,
                     html: document.documentElement.outerHTML,
                     localStorage: localStorageItems,
                     sessionStorage: sessionStorageItems
                 };
-                
+
                 // Send via webkit message handler
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                     window.webkit.messageHandlers.passageWebView.postMessage({
@@ -2087,7 +2087,7 @@ class RemoteControlManager {
             }
         })();
         """
-        
+
         // Set up completion timeout (5 seconds like React Native)
         var hasCompleted = false
         let timeoutTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
@@ -2105,15 +2105,18 @@ class RemoteControlManager {
                 ))
             }
         }
-        
+
         // Store completion handler for message processing
         pageDataCompletionHandler = { [weak self] pageData in
             if !hasCompleted {
                 hasCompleted = true
                 timeoutTimer.invalidate()
-                
+
+                // Extract URL from page data for cookie collection
+                let pageUrl = pageData["url"] as? String
+
                 // Collect cookies from WKWebsiteDataStore
-                self?.collectCookies { cookies in
+                self?.collectCookies(pageUrl: pageUrl) { cookies in
                     // Convert localStorage and sessionStorage to proper format
                     let localStorage = self?.convertStorageItems(pageData["localStorage"] as? [[String: Any]]) ?? []
                     let sessionStorage = self?.convertStorageItems(pageData["sessionStorage"] as? [[String: Any]]) ?? []
@@ -2148,20 +2151,50 @@ class RemoteControlManager {
         }
     }
     
-    private func collectCookies(completion: @escaping ([CookieData]) -> Void) {
-        guard !cookieDomains.isEmpty else {
-            passageLogger.debug("[REMOTE CONTROL] No cookie domains configured, returning empty array")
+    private func collectCookies(pageUrl: String?, completion: @escaping ([CookieData]) -> Void) {
+        // Determine domains to collect cookies from
+        var domainsToCollect: [String] = []
+
+        // First try configured cookieDomains
+        if !cookieDomains.isEmpty {
+            domainsToCollect = cookieDomains
+            passageLogger.debug("[REMOTE CONTROL] Using configured cookie domains: \(cookieDomains)")
+        }
+        // Fallback to extracting domain from current page URL
+        else if let urlString = pageUrl, let url = URL(string: urlString), let host = url.host {
+            // Add both the full domain and .domain format (for subdomain cookies)
+            domainsToCollect = [host]
+            if !host.starts(with: ".") {
+                domainsToCollect.append(".\(host)")
+            }
+
+            // Also add root domain (e.g., kroger.com if host is www.kroger.com)
+            let components = host.components(separatedBy: ".")
+            if components.count > 2 {
+                // Extract root domain (last two components)
+                let rootDomain = components.suffix(2).joined(separator: ".")
+                if rootDomain != host {
+                    domainsToCollect.append(rootDomain)
+                    domainsToCollect.append(".\(rootDomain)")
+                }
+            }
+
+            passageLogger.info("[REMOTE CONTROL] Extracted cookie domains from current URL: \(domainsToCollect)")
+        }
+
+        guard !domainsToCollect.isEmpty else {
+            passageLogger.warn("[REMOTE CONTROL] No cookie domains available (neither configured nor from URL), returning empty array")
             completion([])
             return
         }
-        
-        passageLogger.debug("[REMOTE CONTROL] Collecting cookies for domains: \(cookieDomains)")
-        
+
+        passageLogger.debug("[REMOTE CONTROL] Collecting cookies for domains: \(domainsToCollect)")
+
         let cookieStore = WKWebsiteDataStore.default().httpCookieStore
         var allCookies: [CookieData] = []
         let group = DispatchGroup()
-        
-        for domain in cookieDomains {
+
+        for domain in domainsToCollect {
             group.enter()
             
             // Get all cookies and filter by domain
@@ -2204,9 +2237,9 @@ class RemoteControlManager {
         return cookieDomain == targetDomain || cookieDomain.hasSuffix(targetDomain)
     }
     
-    private func convertSameSitePolicy(_ policy: HTTPCookieStringPolicy?) -> String? {
-        guard let policy = policy else { return nil }
-        
+    private func convertSameSitePolicy(_ policy: HTTPCookieStringPolicy?) -> String {
+        guard let policy = policy else { return "None" }
+
         switch policy {
         case .sameSiteStrict:
             return "Strict"
@@ -2356,9 +2389,9 @@ class RemoteControlManager {
                 // Handle command results from automation webview
                 if let commandId = message["commandId"] as? String,
                    let status = message["status"] as? String {
-                    
+
                     passageLogger.info("[REMOTE CONTROL] Command result: \(commandId), status: \(status)")
-                    
+
                     if status == "success" {
                         let result = message["data"]
                         sendSuccess(commandId: commandId, data: result)
@@ -2367,7 +2400,82 @@ class RemoteControlManager {
                         sendError(commandId: commandId, error: error)
                     }
                 }
-                
+
+            case "waitForInteraction":
+                // Handle user interaction events (click, scroll, blur/input)
+                if let commandId = message["commandId"] as? String {
+                    passageLogger.info("[REMOTE CONTROL] waitForInteraction event received for command: \(commandId)")
+
+                    if let interactionType = message["interactionType"] as? String {
+                        passageLogger.info("[REMOTE CONTROL] Interaction type: \(interactionType)")
+
+                        // Extract interaction value
+                        let interactionValue = message["value"] as? [String: Any] ?? [:]
+
+                        // Build interaction data structure
+                        var interactionData: [String: Any] = [
+                            "type": interactionType,
+                            "timestamp": Date().timeIntervalSince1970 * 1000 // milliseconds
+                        ]
+
+                        // Add type-specific data
+                        switch interactionType {
+                        case "click":
+                            if let elementInfo = interactionValue["elementInfo"] as? [String: Any] {
+                                interactionData["elementInfo"] = elementInfo
+                            }
+                            if let clickPosition = interactionValue["clickPosition"] as? [String: Any] {
+                                interactionData["clickPosition"] = clickPosition
+                            }
+
+                        case "scroll":
+                            if let deltaY = interactionValue["deltaY"] {
+                                interactionData["deltaY"] = deltaY
+                            }
+
+                        case "blur":
+                            if let elementInfo = interactionValue["elementInfo"] as? [String: Any] {
+                                interactionData["elementInfo"] = elementInfo
+                            }
+                            if let inputValue = interactionValue["inputValue"] {
+                                interactionData["inputValue"] = inputValue
+                            }
+                            if let focusPosition = interactionValue["focusPosition"] as? [String: Any] {
+                                interactionData["focusPosition"] = focusPosition
+                            }
+
+                        default:
+                            passageLogger.warn("[REMOTE CONTROL] Unknown interaction type: \(interactionType)")
+                        }
+
+                        passageLogger.debug("[REMOTE CONTROL] Interaction data: \(interactionData)")
+
+                        // Get page data with screenshot and HTML
+                        Task {
+                            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                                getPageData { pageData in
+                                    // Send the interaction as a success result with pageData
+                                    let result = CommandResult(
+                                        id: commandId,
+                                        status: "success",
+                                        data: AnyCodable(interactionData),
+                                        pageData: pageData,
+                                        error: nil
+                                    )
+
+                                    self.sendResult(result)
+                                    passageLogger.info("[REMOTE CONTROL] Interaction data sent successfully")
+                                    continuation.resume()
+                                }
+                            }
+                        }
+                    } else {
+                        passageLogger.error("[REMOTE CONTROL] waitForInteraction message missing interactionType")
+                    }
+                } else {
+                    passageLogger.error("[REMOTE CONTROL] waitForInteraction message missing commandId")
+                }
+
             case "currentUrl":
                 // Handle current URL responses
                 passageLogger.debug("[REMOTE CONTROL] Current URL: \(message["url"] as? String ?? "unknown")")
@@ -2422,7 +2530,78 @@ class RemoteControlManager {
                                 let error = parsedData["error"] as? String ?? "Script execution failed"
                                 sendError(commandId: commandId, error: error)
                             }
-                            
+
+                        case "waitForInteraction":
+                            // Handle user interaction events (click, scroll, blur/input)
+                            passageLogger.info("[REMOTE CONTROL] waitForInteraction event received")
+
+                            if let interactionType = parsedData["interactionType"] as? String {
+                                passageLogger.info("[REMOTE CONTROL] Interaction type: \(interactionType)")
+
+                                // Extract interaction value
+                                let interactionValue = parsedData["value"] as? [String: Any] ?? [:]
+
+                                // Build interaction data structure
+                                var interactionData: [String: Any] = [
+                                    "type": interactionType,
+                                    "timestamp": Date().timeIntervalSince1970 * 1000 // milliseconds
+                                ]
+
+                                // Add type-specific data
+                                switch interactionType {
+                                case "click":
+                                    if let elementInfo = interactionValue["elementInfo"] as? [String: Any] {
+                                        interactionData["elementInfo"] = elementInfo
+                                    }
+                                    if let clickPosition = interactionValue["clickPosition"] as? [String: Any] {
+                                        interactionData["clickPosition"] = clickPosition
+                                    }
+
+                                case "scroll":
+                                    if let deltaY = interactionValue["deltaY"] {
+                                        interactionData["deltaY"] = deltaY
+                                    }
+
+                                case "blur":
+                                    if let elementInfo = interactionValue["elementInfo"] as? [String: Any] {
+                                        interactionData["elementInfo"] = elementInfo
+                                    }
+                                    if let inputValue = interactionValue["inputValue"] {
+                                        interactionData["inputValue"] = inputValue
+                                    }
+                                    if let focusPosition = interactionValue["focusPosition"] as? [String: Any] {
+                                        interactionData["focusPosition"] = focusPosition
+                                    }
+
+                                default:
+                                    passageLogger.warn("[REMOTE CONTROL] Unknown interaction type: \(interactionType)")
+                                }
+
+                                passageLogger.debug("[REMOTE CONTROL] Interaction data: \(interactionData)")
+
+                                // Get page data with screenshot and HTML
+                                Task {
+                                    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                                        getPageData { pageData in
+                                            // Send the interaction as a success result with pageData
+                                            let result = CommandResult(
+                                                id: commandId,
+                                                status: "success",
+                                                data: AnyCodable(interactionData),
+                                                pageData: pageData,
+                                                error: nil
+                                            )
+
+                                            self.sendResult(result)
+                                            passageLogger.info("[REMOTE CONTROL] Interaction data sent successfully")
+                                            continuation.resume()
+                                        }
+                                    }
+                                }
+                            } else {
+                                passageLogger.error("[REMOTE CONTROL] waitForInteraction message missing interactionType")
+                            }
+
                         default:
                             passageLogger.debug("[REMOTE CONTROL] Unhandled passage message type: \(commandType)")
                         }
@@ -2448,29 +2627,41 @@ class RemoteControlManager {
     /// Matches React Native SDK completeRecording method
     func completeRecording(data: [String: Any]) async {
         passageLogger.debug("[REMOTE CONTROL] completeRecording called with data: \(data)")
-        
+
         guard let currentCommand = currentCommand else {
             passageLogger.error("[REMOTE CONTROL] No current command available to complete")
             return
         }
-        
+
         passageLogger.debug("[REMOTE CONTROL] Completing recording for command: \(currentCommand.id)")
-        
+
+        // Switch to UI webview before completing
+        if currentWebViewType != PassageConstants.WebViewTypes.ui {
+            passageLogger.info("[REMOTE CONTROL] Switching to UI webview for recording completion")
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .showUIWebView, object: nil)
+            }
+            currentWebViewType = PassageConstants.WebViewTypes.ui
+
+            // Small delay to allow webview transition
+            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
+        }
+
         // Collect page data with screenshot based on record flag (whole UI) or captureScreenshot flag (webview only)
         await withCheckedContinuation { continuation in
             getPageData { pageData in
-                // Send done result with success status
+                // Send done result (matches React Native SDK behavior)
                 let result = CommandResult(
                     id: currentCommand.id,
-                    status: "success",
+                    status: "done",
                     data: AnyCodable(data),
                     pageData: pageData,
                     error: nil
                 )
-                
+
                 Task {
                     self.sendResult(result)
-                    
+
                     // Call success callback if available
                     if let onSuccess = self.onSuccess,
                        let connectionData = self.connectionData,
