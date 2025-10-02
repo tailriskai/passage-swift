@@ -41,57 +41,6 @@ extension WebViewModalViewController {
             )
             userContentController.addUserScript(userScript)
 
-            if webViewType == PassageConstants.WebViewTypes.automation {
-                passageLogger.info("[WEBVIEW] Setting up global JavaScript injection for automation webview")
-                let globalScript = generateGlobalJavaScript()
-
-                if !globalScript.isEmpty {
-                    passageLogger.info("[WEBVIEW] 🚀 Injecting global JavaScript into automation webview")
-
-                    let delayedGlobalScript = """
-                    console.log('[Passage] Global JavaScript injection script starting...');
-
-                    (function() {
-                        let attemptCount = 0;
-                        const maxAttempts = 100;
-
-                        function waitForPassage() {
-                            attemptCount++;
-                            console.log('[Passage] Checking for window.passage... attempt ' + attemptCount);
-
-                            if (window.passage && window.passage.initialized) {
-                                console.log('[Passage] ✅ window.passage ready, executing global script');
-                                try {
-                                    \(globalScript)
-                                    console.log('[Passage] ✅ Global script execution completed');
-                                } catch (error) {
-                                    console.error('[Passage] ❌ Error in global script execution:', error);
-                                }
-                            } else if (attemptCount < maxAttempts) {
-                                console.log('[Passage] ⏳ Waiting for window.passage initialization... (' + attemptCount + '/' + maxAttempts + ')');
-                                setTimeout(waitForPassage, 50);
-                            } else {
-                                console.error('[Passage] ❌ Timeout waiting for window.passage after ' + (maxAttempts * 50) + 'ms');
-                            }
-                        }
-
-                        console.log('[Passage] Starting window.passage check in 100ms...');
-                        setTimeout(waitForPassage, 100);
-                    })();
-                    """
-
-                    let globalUserScript = WKUserScript(
-                        source: delayedGlobalScript,
-                        injectionTime: .atDocumentEnd,
-                        forMainFrameOnly: true
-                    )
-                    userContentController.addUserScript(globalUserScript)
-                    passageLogger.info("[WEBVIEW] ✅ Added delayed global JavaScript to automation webview (\(globalScript.count) chars)")
-                } else {
-                    passageLogger.info("[WEBVIEW] ℹ️ No global JavaScript to inject in automation webview (empty script)")
-                }
-            }
-
             let consoleScript = """
             (function() {
                 const originalError = console.error;
@@ -421,40 +370,32 @@ extension WebViewModalViewController {
                 return SafeWeakMap;
             }
 
-            function executeGlobalScript() {
-                try {
-                    const SafeWeakMap = createSafeExecutionContext();
-                    const originalWeakMap = window.WeakMap;
+            try {
+                const SafeWeakMap = createSafeExecutionContext();
+                const originalWeakMap = window.WeakMap;
 
-                    window.WeakMap = SafeWeakMap;
+                window.WeakMap = SafeWeakMap;
 
-                    console.log('[Passage] Executing global script with WeakMap protection');
+                console.log('[Passage] Executing global script with WeakMap protection');
 
-                    (function() {
-                        \(globalScript)
-                    }).call(window);
+                (function() {
+                    \(globalScript)
+                }).call(window);
 
-                    setTimeout(function() {
-                        window.WeakMap = originalWeakMap;
-                        console.log('[Passage] WeakMap protection removed, original WeakMap restored');
-                    }, 1000);
+                setTimeout(function() {
+                    window.WeakMap = originalWeakMap;
+                    console.log('[Passage] WeakMap protection removed, original WeakMap restored');
+                }, 1000);
 
-                    return true;
-                } catch (error) {
-                    console.error('[Passage] Error executing global JavaScript:', error);
-                    console.error('[Passage] Error stack:', error.stack);
+                return true;
+            } catch (error) {
+                console.error('[Passage] Error executing global JavaScript:', error);
+                console.error('[Passage] Error stack:', error.stack);
 
-                    if (typeof originalWeakMap !== 'undefined') {
-                        window.WeakMap = originalWeakMap;
-                    }
-                    return false;
+                if (typeof originalWeakMap !== 'undefined') {
+                    window.WeakMap = originalWeakMap;
                 }
-            }
-
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', executeGlobalScript);
-            } else {
-                setTimeout(executeGlobalScript, 100);
+                return false;
             }
         })();
         """
@@ -462,6 +403,10 @@ extension WebViewModalViewController {
 
     func createPassageScript(for webViewType: String) -> String {
         if webViewType == PassageConstants.WebViewTypes.automation {
+            let globalScript = generateGlobalJavaScript()
+            if globalScript.isEmpty {
+              passageLogger.info("[WEBVIEW] ℹ️ No global JavaScript to inject in automation webview (empty script)")
+            }
             return """
             (function() {
               console.log('[Passage] Automation webview script starting...');
@@ -723,6 +668,8 @@ extension WebViewModalViewController {
               console.log('[Passage] Automation webview script initialized successfully');
               console.log('[Passage] window.passage.initialized:', window.passage.initialized);
               console.log('[Passage] window.passage.webViewType:', window.passage.webViewType);
+
+              \(globalScript)
             })();
             """
         } else {
