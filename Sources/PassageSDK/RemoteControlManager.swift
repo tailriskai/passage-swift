@@ -2545,71 +2545,38 @@ class RemoteControlManager {
                             // Handle user interaction events (click, scroll, blur/input)
                             passageLogger.info("[REMOTE CONTROL] waitForInteraction event received")
 
-                            if let interactionType = parsedData["interactionType"] as? String {
+                            // Use the entire value object which contains all the interaction data
+                            let interactionData = parsedData["value"] as? [String: Any] ?? [:]
+
+                            // Log the interaction type if available
+                            if let interactionType = interactionData["interactionType"] as? String {
                                 passageLogger.info("[REMOTE CONTROL] Interaction type: \(interactionType)")
+                            }
 
-                                // Extract interaction value
-                                let interactionValue = parsedData["value"] as? [String: Any] ?? [:]
+                            passageLogger.debug("[REMOTE CONTROL] Full interaction data: \(interactionData)")
 
-                                // Build interaction data structure
-                                var interactionData: [String: Any] = [
-                                    "type": interactionType,
-                                    "timestamp": Date().timeIntervalSince1970 * 1000 // milliseconds
-                                ]
+                            // Get page data with screenshot and HTML
+                            Task {
+                                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                                    getPageData { pageData in
+                                        // Send the entire interaction data as received from the browser
+                                        let result = CommandResult(
+                                            id: commandId,
+                                            status: "success",
+                                            data: AnyCodable(interactionData),
+                                            pageData: pageData,
+                                            error: nil
+                                        )
 
-                                // Add type-specific data
-                                switch interactionType {
-                                case "click":
-                                    if let elementInfo = interactionValue["elementInfo"] as? [String: Any] {
-                                        interactionData["elementInfo"] = elementInfo
-                                    }
-                                    if let clickPosition = interactionValue["clickPosition"] as? [String: Any] {
-                                        interactionData["clickPosition"] = clickPosition
-                                    }
-
-                                case "scroll":
-                                    if let deltaY = interactionValue["deltaY"] {
-                                        interactionData["deltaY"] = deltaY
-                                    }
-
-                                case "blur":
-                                    if let elementInfo = interactionValue["elementInfo"] as? [String: Any] {
-                                        interactionData["elementInfo"] = elementInfo
-                                    }
-                                    if let inputValue = interactionValue["inputValue"] {
-                                        interactionData["inputValue"] = inputValue
-                                    }
-                                    if let focusPosition = interactionValue["focusPosition"] as? [String: Any] {
-                                        interactionData["focusPosition"] = focusPosition
-                                    }
-
-                                default:
-                                    passageLogger.warn("[REMOTE CONTROL] Unknown interaction type: \(interactionType)")
-                                }
-
-                                passageLogger.debug("[REMOTE CONTROL] Interaction data: \(interactionData)")
-
-                                // Get page data with screenshot and HTML
-                                Task {
-                                    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                                        getPageData { pageData in
-                                            // Send the interaction as a success result with pageData
-                                            let result = CommandResult(
-                                                id: commandId,
-                                                status: "success",
-                                                data: AnyCodable(interactionData),
-                                                pageData: pageData,
-                                                error: nil
-                                            )
-
-                                            self.sendResult(result)
-                                            passageLogger.info("[REMOTE CONTROL] Interaction data sent successfully")
-                                            continuation.resume()
-                                        }
+                                        self.sendResult(result)
+                                        passageLogger.info("[REMOTE CONTROL] Interaction data sent successfully")
+                                        continuation.resume()
                                     }
                                 }
-                            } else {
-                                passageLogger.error("[REMOTE CONTROL] waitForInteraction message missing interactionType")
+                            }
+
+                            if interactionData.isEmpty {
+                                passageLogger.warn("[REMOTE CONTROL] waitForInteraction message has empty value")
                             }
 
                         default:
