@@ -310,7 +310,7 @@ extension WebViewModalViewController {
                 if let isPassageReady = result as? Bool, isPassageReady {
                     passageLogger.debug("[WEBVIEW] window.passage is ready, injecting script")
 
-                    automationWebView.evaluateJavaScript("window.passage.postMessage('test-message-from-swift')") { testResult, testError in
+                    automationWebView.evaluateJavaScript("window.passage.postMessage('ready')") { testResult, testError in
                         if let testError = testError {
                             passageLogger.error("[WEBVIEW] Test postMessage failed: \(testError)")
                         } else {
