@@ -609,6 +609,25 @@ extension WebViewModalViewController {
                   } catch (error) {
                     console.error('[Passage] Error changing user agent:', error);
                   }
+                },
+
+                openLink: function(url) {
+                  console.log('[Passage] openLink called with:', url);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'openLink',
+                        url: url,
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      });
+                      console.log('[Passage] openLink request sent for URL:', url);
+                    } else {
+                      console.warn('[Passage] Message handlers not available for openLink');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error opening link:', error);
+                  }
                 }
               };
 
@@ -845,6 +864,25 @@ extension WebViewModalViewController {
                     }
                   } catch (error) {
                     console.error('[Passage] Error showing bottom sheet:', error);
+                  }
+                },
+
+                openLink: function(url) {
+                  console.log('[Passage] openLink called with:', url);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'openLink',
+                        url: url,
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                      console.log('[Passage] openLink request sent for URL:', url);
+                    } else {
+                      console.warn('[Passage] Message handlers not available for openLink');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error opening link:', error);
                   }
                 }
               };

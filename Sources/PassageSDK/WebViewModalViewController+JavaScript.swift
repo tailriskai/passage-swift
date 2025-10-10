@@ -628,6 +628,35 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                     passageLogger.debug("[WEBVIEW] changeAutomationUserAgent - new user agent: \(userAgent)")
                     changeAutomationUserAgentAndReload(userAgent)
 
+                case "openLink":
+                    passageLogger.info("[WEBVIEW] openLink called from \(webViewType) webview")
+
+                    guard let urlString = body["url"] as? String else {
+                        passageLogger.error("[WEBVIEW] openLink missing url parameter")
+                        return
+                    }
+
+                    guard let url = URL(string: urlString) else {
+                        passageLogger.error("[WEBVIEW] openLink invalid URL: \(urlString)")
+                        return
+                    }
+
+                    passageLogger.debug("[WEBVIEW] Opening external link: \(urlString)")
+
+                    DispatchQueue.main.async {
+                        if UIApplication.shared.canOpenURL(url) {
+                            UIApplication.shared.open(url, options: [:]) { success in
+                                if success {
+                                    passageLogger.info("[WEBVIEW] Successfully opened external link: \(urlString)")
+                                } else {
+                                    passageLogger.error("[WEBVIEW] Failed to open external link: \(urlString)")
+                                }
+                            }
+                        } else {
+                            passageLogger.error("[WEBVIEW] Cannot open URL (invalid scheme or restricted): \(urlString)")
+                        }
+                    }
+
                 case "CLOSE_CONFIRMED":
                     passageLogger.info("[WEBVIEW] Close confirmation received - proceeding with close")
                     DispatchQueue.main.async {
