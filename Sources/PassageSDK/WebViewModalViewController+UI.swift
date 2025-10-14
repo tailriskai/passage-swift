@@ -375,6 +375,11 @@ extension WebViewModalViewController {
             return
         }
 
+        if isKeyboardEnabled {
+            passageLogger.debug("[KEYBOARD] Keyboard enabled via JavaScript flag, allowing keyboard")
+            return
+        }
+
         passageLogger.info("[KEYBOARD] Keyboard will show while UI webview is visible - dismissing immediately")
 
         DispatchQueue.main.async { [weak self] in
@@ -385,6 +390,11 @@ extension WebViewModalViewController {
     @objc func keyboardDidShow(_ notification: Notification) {
         guard isShowingUIWebView else {
             passageLogger.debug("[KEYBOARD] Automation webview is visible, keyboard allowed")
+            return
+        }
+
+        if isKeyboardEnabled {
+            passageLogger.debug("[KEYBOARD] Keyboard enabled via JavaScript flag, allowing keyboard")
             return
         }
 

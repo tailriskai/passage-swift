@@ -100,6 +100,9 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     // Record mode: Lock UI webview after completeRecording
     var isUIWebViewLockedByRecording: Bool = false
 
+    // Keyboard control: Allow temporary keyboard enablement via JavaScript
+    var isKeyboardEnabled: Bool = false
+
     override func viewDidLoad() {
         super.viewDidLoad()
 

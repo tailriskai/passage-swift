@@ -670,6 +670,17 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                         self.showAutomationWebView()
                     }
                     self.wasShowingAutomationBeforeClose = false
+                case "enableKeyboard":
+                    passageLogger.info("[KEYBOARD] Keyboard enabled via JavaScript from \(webViewType) webview")
+                    DispatchQueue.main.async {
+                        self.isKeyboardEnabled = true
+                    }
+                case "disableKeyboard":
+                    passageLogger.info("[KEYBOARD] Keyboard disabled via JavaScript from \(webViewType) webview")
+                    DispatchQueue.main.async {
+                        self.isKeyboardEnabled = false
+                        self.view.endEditing(true)
+                    }
                 case PassageConstants.MessageTypes.message:
                     if let data = body["data"] {
                         if let dataString = data as? String,

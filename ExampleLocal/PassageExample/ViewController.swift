@@ -3,7 +3,14 @@ import PassageSDK
 import WebKit
 
 class ViewController: UIViewController {
-    
+
+    // MARK: - Configuration URLs
+    private let passageUIUrl = "http://localhost:3001"
+    private let passageAPIUrl = "http://localhost:3000"
+    private let passageSocketUrl = "http://localhost:3000"
+    private let defaultPublishableKey = "pk-live-0d017c4c-307e-441c-8b72-cb60f64f77f8"
+
+    // MARK: - UI Components
     private var titleLabel: UILabel!
     private var connectButton: UIButton!
     private var initializeButton: UIButton!
@@ -19,6 +26,8 @@ class ViewController: UIViewController {
     private var recordModeSwitch: UISwitch!
     private var recordModeLabel: UILabel!
     private var recordModeStackView: UIStackView!
+
+    // MARK: - State
     private var selectedIntegration: String = "kroger"
     private var exitCallCount: Int = 0  // Track onExit callback calls
     private var isInitialized: Bool = false  // Track SDK initialization state
@@ -61,9 +70,9 @@ class ViewController: UIViewController {
 
         // Configure Passage SDK with debug mode
         let config = PassageConfig(
-            uiUrl: "http://localhost:3001",
-            apiUrl: "http://localhost:3000",
-            socketUrl: "http://localhost:3000",
+            uiUrl: passageUIUrl,
+            apiUrl: passageAPIUrl,
+            socketUrl: passageSocketUrl,
             debug: true
         )
 
@@ -654,7 +663,7 @@ class ViewController: UIViewController {
         print("Calling Passage.shared.initialize")
 
         // Extract publishable key from token (if available) or use a default
-        let publishableKey = extractPublishableKey(from: token) ?? "pk-live-0d017c4c-307e-441c-8b72-cb60f64f77f8"
+        let publishableKey = extractPublishableKey(from: token) ?? defaultPublishableKey
 
         let options = PassageInitializeOptions(
             publishableKey: publishableKey,
@@ -739,7 +748,7 @@ class ViewController: UIViewController {
 
         isLoadingIntegrations = true
 
-        guard let url = URL(string: "http://localhost:3000/integrations") else {
+        guard let url = URL(string: "\(passageAPIUrl)/integrations") else {
             print("❌ Invalid integrations URL")
             isLoadingIntegrations = false
             return
@@ -856,7 +865,7 @@ class ViewController: UIViewController {
     }
 
     private func fetchIntentToken(completion: @escaping (Result<String, Error>) -> Void) {
-        guard let url = URL(string: "http://localhost:3000/intent-token") else {
+        guard let url = URL(string: "\(passageAPIUrl)/intent-token") else {
             completion(.failure(NSError(domain: "InvalidURL", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
             return
         }
@@ -867,7 +876,7 @@ class ViewController: UIViewController {
         // Set headers
         request.setValue("*/*", forHTTPHeaderField: "accept")
         request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "accept-language")
-        request.setValue("Publishable pk-live-0d017c4c-307e-441c-8b72-cb60f64f77f8", forHTTPHeaderField: "authorization")
+        request.setValue("Publishable \(defaultPublishableKey)", forHTTPHeaderField: "authorization")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.setValue("u=1, i", forHTTPHeaderField: "priority")
         request.setValue("\"Not;A=Brand\";v=\"99\", \"Google Chrome\";v=\"139\", \"Chromium\";v=\"139\"", forHTTPHeaderField: "sec-ch-ua")
@@ -879,7 +888,12 @@ class ViewController: UIViewController {
 
         // Create request body with selected integration and clearAllCookies flag
         var requestBody: [String: Any] = [
-            "integrationId": selectedIntegration
+            "integrationId": selectedIntegration,
+            "resources": [
+                "Trip": [
+                    "read": [String: Any]()
+                ]
+            ]
         ]
 
         // Add clearAllCookies flag if the switch is on

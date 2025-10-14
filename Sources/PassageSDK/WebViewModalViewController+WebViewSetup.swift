@@ -884,6 +884,42 @@ extension WebViewModalViewController {
                   } catch (error) {
                     console.error('[Passage] Error opening link:', error);
                   }
+                },
+
+                enableKeyboard: function() {
+                  console.log('[Passage] enableKeyboard called');
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'enableKeyboard',
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                      console.log('[Passage] enableKeyboard request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for enableKeyboard');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error enabling keyboard:', error);
+                  }
+                },
+
+                disableKeyboard: function() {
+                  console.log('[Passage] disableKeyboard called');
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'disableKeyboard',
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                      console.log('[Passage] disableKeyboard request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for disableKeyboard');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error disabling keyboard:', error);
+                  }
                 }
               };
 
