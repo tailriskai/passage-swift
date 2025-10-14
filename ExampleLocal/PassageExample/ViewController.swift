@@ -41,23 +41,23 @@ class ViewController: UIViewController {
     private var initializeButtonTopConstraint: NSLayoutConstraint!
     private var resultTextViewTopConstraint: NSLayoutConstraint!
     
-    private var integrationOptions: [(value: String, label: String)] = [
-        ("passage-test-captcha", "Passage Test Integration (with CAPTCHA)"),
-        ("passage-test", "Passage Test Integration"),
-        ("amazon", "Amazon"),
-        ("uber", "Uber"),
-        ("kroger", "Kroger"),
-        ("kindle", "Kindle"),
-        ("audible", "Audible"),
-        ("youtube", "YouTube"),
-        ("netflix", "Netflix"),
-        ("doordash", "Doordash"),
-        ("ubereats", "UberEats"),
-        ("chess", "Chess.com"),
-        ("spotify", "Spotify"),
-        ("verizon", "Verizon"),
-        ("chewy", "Chewy"),
-        ("att", "AT&T")
+    private var integrationOptions: [(value: String, label: String, resources: [[String: Any]])] = [
+        ("passage-test-captcha", "Passage Test Integration (with CAPTCHA)", []),
+        ("passage-test", "Passage Test Integration", []),
+        ("amazon", "Amazon", []),
+        ("uber", "Uber", []),
+        ("kroger", "Kroger", []),
+        ("kindle", "Kindle", []),
+        ("audible", "Audible", []),
+        ("youtube", "YouTube", []),
+        ("netflix", "Netflix", []),
+        ("doordash", "Doordash", []),
+        ("ubereats", "UberEats", []),
+        ("chess", "Chess.com", []),
+        ("spotify", "Spotify", []),
+        ("verizon", "Verizon", []),
+        ("chewy", "Chewy", []),
+        ("att", "AT&T", [])
     ]
 
     private var isLoadingIntegrations = false
@@ -814,16 +814,18 @@ class ViewController: UIViewController {
     }
 
     private func updateIntegrationsFromAPI(_ integrations: [[String: Any]]) {
-        var newIntegrations: [(value: String, label: String)] = []
+        var newIntegrations: [(value: String, label: String, resources: [[String: Any]])] = []
 
         for integration in integrations {
             // Handle both id/slug formats for integration identifier
             if let slug = integration["slug"] as? String {
                 let name = integration["name"] as? String ?? integration["displayName"] as? String ?? slug.capitalized
-                newIntegrations.append((value: slug, label: name))
+                let resources = integration["resources"] as? [[String: Any]] ?? []
+                newIntegrations.append((value: slug, label: name, resources: resources))
             } else if let id = integration["id"] as? String {
                 let name = integration["name"] as? String ?? integration["displayName"] as? String ?? id.capitalized
-                newIntegrations.append((value: id, label: name))
+                let resources = integration["resources"] as? [[String: Any]] ?? []
+                newIntegrations.append((value: id, label: name, resources: resources))
             }
         }
 
@@ -886,14 +888,30 @@ class ViewController: UIViewController {
         request.setValue("cors", forHTTPHeaderField: "sec-fetch-mode")
         request.setValue("cross-site", forHTTPHeaderField: "sec-fetch-site")
 
-        // Create request body with selected integration and clearAllCookies flag
+        // Get resources for the selected integration
+        let selectedIntegrationResources = integrationOptions.first { $0.value == selectedIntegration }?.resources ?? []
+
+        // Build resources dictionary dynamically from integration's available resources
+        var resourcesDict: [String: [String: [String: Any]]] = [:]
+        for resource in selectedIntegrationResources {
+            guard let resourceName = resource["name"] as? String,
+                  let operations = resource["operations"] as? [String: Any] else {
+                continue
+            }
+
+            var operationsDict: [String: [String: Any]] = [:]
+            for (operationName, _) in operations {
+                // For each operation, create an empty arguments dictionary
+                operationsDict[operationName] = [:]
+            }
+
+            resourcesDict[resourceName] = operationsDict
+        }
+
+        // Create request body with selected integration and resources
         var requestBody: [String: Any] = [
             "integrationId": selectedIntegration,
-            "resources": [
-                "Trip": [
-                    "read": [String: Any]()
-                ]
-            ]
+            "resources": resourcesDict
         ]
 
         // Add clearAllCookies flag if the switch is on
