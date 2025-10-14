@@ -551,6 +551,32 @@ extension WebViewModalViewController {
                   }
                 },
 
+                sendToSession: function(path, data, headers) {
+                  console.log('[Passage] sendToSession called with path:', path);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      const message = {
+                        type: 'sendToSession',
+                        path: path,
+                        data: data,
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      };
+
+                      if (headers) {
+                        message.headers = headers;
+                      }
+
+                      window.webkit.messageHandlers.passageWebView.postMessage(message);
+                      console.log('[Passage] sendToSession request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for sendToSession');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error in sendToSession:', error);
+                  }
+                },
+
                 switchWebview: function() {
                   console.log('[Passage] switchWebview called');
                   try {
@@ -823,6 +849,32 @@ extension WebViewModalViewController {
                     }
                   } catch (error) {
                     console.error('[Passage] Error in sendToBackend:', error);
+                  }
+                },
+
+                sendToSession: function(path, data, headers) {
+                  console.log('[Passage] sendToSession called with path:', path);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      const message = {
+                        type: 'sendToSession',
+                        path: path,
+                        data: data,
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      };
+
+                      if (headers) {
+                        message.headers = headers;
+                      }
+
+                      window.webkit.messageHandlers.passageWebView.postMessage(message);
+                      console.log('[Passage] sendToSession request sent');
+                    } else {
+                      console.warn('[Passage] Message handlers not available for sendToSession');
+                    }
+                  } catch (error) {
+                    console.error('[Passage] Error in sendToSession:', error);
                   }
                 },
 

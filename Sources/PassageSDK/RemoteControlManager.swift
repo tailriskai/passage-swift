@@ -572,8 +572,8 @@ class RemoteControlManager {
         return config.apiUrl
     }
 
-    func getWorkerUrl() -> String {
-        return config.workerUrl
+    func getSessionUrl() -> String {
+        return config.sessionUrl
     }
 
     private func extractCaptureScreenshotFlag(from token: String) -> Bool {

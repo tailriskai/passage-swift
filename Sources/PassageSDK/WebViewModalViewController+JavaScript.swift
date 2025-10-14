@@ -421,34 +421,34 @@ extension WebViewModalViewController {
         passageLogger.debug("[SEND_TO_BACKEND] Request sent")
     }
 
-    private func sendToSessionWorker(apiPath: String, data: Any, headers: [String: String]? = nil, completion: @escaping (Bool, String?) -> Void) {
-        passageLogger.info("[SEND_TO_WORKER] ========== SENDING DATA TO SESSION WORKER ==========")
-        passageLogger.info("[SEND_TO_WORKER] API Path: \(apiPath)")
+    private func sendToSession(path: String, data: Any, headers: [String: String]? = nil, completion: @escaping (Bool, String?) -> Void) {
+        passageLogger.info("[SEND_TO_SESSION] ========== SENDING DATA TO SESSION ==========")
+        passageLogger.info("[SEND_TO_SESSION] Path: \(path)")
 
         guard let remoteControl = remoteControl else {
-            passageLogger.error("[SEND_TO_WORKER] ❌ No remote control available")
+            passageLogger.error("[SEND_TO_SESSION] ❌ No remote control available")
             completion(false, "No remote control available")
             return
         }
 
-        let baseUrl = remoteControl.getWorkerUrl().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let fullUrlString = baseUrl + apiPath
+        let baseUrl = remoteControl.getSessionUrl().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let fullUrlString = baseUrl + path
 
         guard let url = URL(string: fullUrlString) else {
-            passageLogger.error("[SEND_TO_WORKER] ❌ Invalid URL: \(fullUrlString)")
+            passageLogger.error("[SEND_TO_SESSION] ❌ Invalid URL: \(fullUrlString)")
             completion(false, "Invalid URL")
             return
         }
 
-        passageLogger.info("[SEND_TO_WORKER] Full URL: \(fullUrlString)")
+        passageLogger.info("[SEND_TO_SESSION] Full URL: \(fullUrlString)")
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: data, options: []) else {
-            passageLogger.error("[SEND_TO_WORKER] ❌ Failed to serialize data to JSON")
+            passageLogger.error("[SEND_TO_SESSION] ❌ Failed to serialize data to JSON")
             completion(false, "Failed to serialize data")
             return
         }
 
-        passageLogger.debug("[SEND_TO_WORKER] JSON payload size: \(jsonData.count) bytes")
+        passageLogger.debug("[SEND_TO_SESSION] JSON payload size: \(jsonData.count) bytes")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -459,42 +459,42 @@ extension WebViewModalViewController {
         if let headers = headers {
             for (key, value) in headers {
                 request.setValue(value, forHTTPHeaderField: key)
-                passageLogger.debug("[SEND_TO_WORKER] Added custom header: \(key)")
+                passageLogger.debug("[SEND_TO_SESSION] Added custom header: \(key)")
             }
         }
 
         if headers?["x-intent-token"] == nil, let intentToken = remoteControl.getIntentToken() {
             request.setValue(intentToken, forHTTPHeaderField: "x-intent-token")
-            passageLogger.debug("[SEND_TO_WORKER] Added x-intent-token header from remote control")
+            passageLogger.debug("[SEND_TO_SESSION] Added x-intent-token header from remote control")
         }
 
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
-                passageLogger.error("[SEND_TO_WORKER] ❌ Request failed: \(error.localizedDescription)")
+                passageLogger.error("[SEND_TO_SESSION] ❌ Request failed: \(error.localizedDescription)")
                 completion(false, error.localizedDescription)
                 return
             }
 
             guard let httpResponse = response as? HTTPURLResponse else {
-                passageLogger.error("[SEND_TO_WORKER] ❌ Invalid response type")
+                passageLogger.error("[SEND_TO_SESSION] ❌ Invalid response type")
                 completion(false, "Invalid response")
                 return
             }
 
-            passageLogger.info("[SEND_TO_WORKER] Response status: \(httpResponse.statusCode)")
+            passageLogger.info("[SEND_TO_SESSION] Response status: \(httpResponse.statusCode)")
 
             if (200...299).contains(httpResponse.statusCode) {
-                passageLogger.info("[SEND_TO_WORKER] ✅ Request succeeded")
+                passageLogger.info("[SEND_TO_SESSION] ✅ Request succeeded")
                 completion(true, nil)
             } else {
                 let errorMessage = "HTTP \(httpResponse.statusCode)"
-                passageLogger.error("[SEND_TO_WORKER] ❌ Request failed with status: \(errorMessage)")
+                passageLogger.error("[SEND_TO_SESSION] ❌ Request failed with status: \(errorMessage)")
                 completion(false, errorMessage)
             }
         }
 
         task.resume()
-        passageLogger.debug("[SEND_TO_WORKER] Request sent")
+        passageLogger.debug("[SEND_TO_SESSION] Request sent")
     }
 
     func handlePassageMessage(_ data: [String: Any], webViewType: String) {
@@ -693,31 +693,31 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                         }
                     }
 
-                case "sendToSessionWorker":
-                    passageLogger.info("[WEBVIEW] sendToSessionWorker called from \(webViewType) webview")
+                case "sendToSession":
+                    passageLogger.info("[WEBVIEW] sendToSession called from \(webViewType) webview")
 
-                    guard let apiPath = body["apiPath"] as? String else {
-                        passageLogger.error("[WEBVIEW] sendToSessionWorker missing apiPath parameter")
+                    guard let path = body["path"] as? String else {
+                        passageLogger.error("[WEBVIEW] sendToSession missing path parameter")
                         return
                     }
 
                     guard let data = body["data"] else {
-                        passageLogger.error("[WEBVIEW] sendToSessionWorker missing data parameter")
+                        passageLogger.error("[WEBVIEW] sendToSession missing data parameter")
                         return
                     }
 
                     let headers = body["headers"] as? [String: String]
 
-                    passageLogger.debug("[WEBVIEW] sendToSessionWorker - apiPath: \(apiPath)")
+                    passageLogger.debug("[WEBVIEW] sendToSession - path: \(path)")
                     if let headers = headers {
-                        passageLogger.debug("[WEBVIEW] sendToSessionWorker - headers: \(headers.keys.joined(separator: ", "))")
+                        passageLogger.debug("[WEBVIEW] sendToSession - headers: \(headers.keys.joined(separator: ", "))")
                     }
 
-                    sendToSessionWorker(apiPath: apiPath, data: data, headers: headers) { success, error in
+                    sendToSession(path: path, data: data, headers: headers) { success, error in
                         if let error = error {
-                            passageLogger.error("[WEBVIEW] sendToSessionWorker failed: \(error)")
+                            passageLogger.error("[WEBVIEW] sendToSession failed: \(error)")
                         } else if success {
-                            passageLogger.debug("[WEBVIEW] sendToSessionWorker succeeded")
+                            passageLogger.debug("[WEBVIEW] sendToSession succeeded")
                         }
                     }
 
