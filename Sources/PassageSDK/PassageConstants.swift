@@ -59,6 +59,7 @@ public enum PassageConstants {
         // New URL structure (separate UI and API)
         public static let uiUrl = "https://ui.runpassage.ai"
         public static let apiUrl = "https://api.runpassage.ai"
+        public static let workerUrl = "https://worker.runpassage.ai"
         // Deprecated: use uiUrl instead
         @available(*, deprecated, message: "Use uiUrl instead")
         public static let baseUrl = "https://ui.runpassage.ai"

@@ -9,6 +9,7 @@ import WebKit
 public struct PassageConfig {
     public let uiUrl: String
     public let apiUrl: String
+    public let workerUrl: String
     public let socketUrl: String
     public let socketNamespace: String
     public let debug: Bool
@@ -23,6 +24,7 @@ public struct PassageConfig {
     public init(
         uiUrl: String? = nil,
         apiUrl: String? = nil,
+        workerUrl: String? = nil,
         socketUrl: String? = nil,
         socketNamespace: String? = nil,
         debug: Bool = false,
@@ -30,6 +32,7 @@ public struct PassageConfig {
     ) {
         self.uiUrl = uiUrl ?? PassageConstants.Defaults.uiUrl
         self.apiUrl = apiUrl ?? PassageConstants.Defaults.apiUrl
+        self.workerUrl = workerUrl ?? PassageConstants.Defaults.workerUrl
         self.socketUrl = socketUrl ?? PassageConstants.Defaults.socketUrl
         self.socketNamespace = socketNamespace ?? PassageConstants.Defaults.socketNamespace
         self.debug = debug
@@ -47,6 +50,7 @@ public struct PassageConfig {
     ) {
         self.uiUrl = baseUrl ?? PassageConstants.Defaults.uiUrl
         self.apiUrl = PassageConstants.Defaults.apiUrl
+        self.workerUrl = PassageConstants.Defaults.workerUrl
         self.socketUrl = socketUrl ?? PassageConstants.Defaults.socketUrl
         self.socketNamespace = socketNamespace ?? PassageConstants.Defaults.socketNamespace
         self.debug = debug
