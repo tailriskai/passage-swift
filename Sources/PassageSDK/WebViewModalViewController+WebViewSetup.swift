@@ -59,8 +59,8 @@ extension WebViewModalViewController {
                     const isWeakMapError = event.message && event.message.includes('WeakMap');
 
                     if (isWeakMapError) {
-                        console.error('[Passage] WeakMap error detected:', event.message);
-                        console.error('[Passage] This may be caused by global JavaScript injection timing');
+                        window.PASSAGE_INTERNAL_LOGGER.error('[Passage] WeakMap error detected:', event.message);
+                        window.PASSAGE_INTERNAL_LOGGER.error('[Passage] This may be caused by global JavaScript injection timing');
                     }
 
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
@@ -78,7 +78,7 @@ extension WebViewModalViewController {
                 });
 
                 window.addEventListener('unhandledrejection', function(event) {
-                    console.error('[Passage] Unhandled promise rejection:', event.reason);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Unhandled promise rejection:', event.reason);
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                         window.webkit.messageHandlers.passageWebView.postMessage({
                             type: 'unhandled_rejection',
@@ -315,7 +315,7 @@ extension WebViewModalViewController {
             'use strict';
 
             if (typeof window === 'undefined') {
-                console.warn('[Passage] Global JavaScript executed outside window context');
+                window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Global JavaScript executed outside window context');
                 return false;
             }
 
@@ -333,7 +333,7 @@ extension WebViewModalViewController {
 
                     instance.set = function(key, value) {
                         if (key === null || key === undefined || (typeof key !== 'object' && typeof key !== 'function' && typeof key !== 'symbol')) {
-                            console.warn('[Passage] WeakMap: Invalid key type, using fallback storage:', typeof key, key);
+                            window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] WeakMap: Invalid key type, using fallback storage:', typeof key, key);
                             primitiveKeyMap.set(key, value);
                             return instance;
                         }
@@ -376,7 +376,7 @@ extension WebViewModalViewController {
 
                 window.WeakMap = SafeWeakMap;
 
-                console.log('[Passage] Executing global script with WeakMap protection');
+                window.PASSAGE_INTERNAL_LOGGER.info('[Passage] Executing global script with WeakMap protection');
 
                 (function() {
                     \(globalScript)
@@ -384,13 +384,13 @@ extension WebViewModalViewController {
 
                 setTimeout(function() {
                     window.WeakMap = originalWeakMap;
-                    console.log('[Passage] WeakMap protection removed, original WeakMap restored');
+                    window.PASSAGE_INTERNAL_LOGGER.info('[Passage] WeakMap protection removed, original WeakMap restored');
                 }, 1000);
 
                 return true;
             } catch (error) {
-                console.error('[Passage] Error executing global JavaScript:', error);
-                console.error('[Passage] Error stack:', error.stack);
+                window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error executing global JavaScript:', error);
+                window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error stack:', error.stack);
 
                 if (typeof originalWeakMap !== 'undefined') {
                     window.WeakMap = originalWeakMap;
@@ -409,38 +409,60 @@ extension WebViewModalViewController {
             }
             return """
             (function() {
-              console.log('[Passage] Automation webview script starting...');
+              if (!window.PASSAGE_INTERNAL_LOGGER) {
+                window.PASSAGE_INTERNAL_LOGGER = {
+                  info: console.info.bind(console),
+                  warn: console.warn.bind(console),
+                  error: console.error.bind(console),
+                };
+              }
+
+              window.PASSAGE_INTERNAL_LOGGER.info('[Passage] Automation webview script starting...');
 
               if (window.passage && window.passage.initialized) {
-                console.log('[Passage] Already initialized, skipping');
+                window.PASSAGE_INTERNAL_LOGGER.info('[Passage] Already initialized, skipping');
                 return;
               }
 
-              console.log('[Passage] Initializing window.passage for automation webview');
+              window.PASSAGE_INTERNAL_LOGGER.info('[Passage] Initializing window.passage for automation webview');
               window.passage = {
                 initialized: true,
                 webViewType: 'automation',
 
+                createLogger: function() {
+                  return {
+                    info: function() {
+                      return window.PASSAGE_INTERNAL_LOGGER.info.apply(this, arguments);
+                    },
+                    warn: function() {
+                      return window.PASSAGE_INTERNAL_LOGGER.warn.apply(this, arguments);
+                    },
+                    error: function() {
+                      return window.PASSAGE_INTERNAL_LOGGER.error.apply(this, arguments);
+                    },
+                  };
+                },
+
                 postMessage: function(data) {
-                  console.log('[Passage] postMessage called with data:', data);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] postMessage called with data:', data);
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
-                      console.log('[Passage] Sending message via webkit handler');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] Sending message via webkit handler');
                       window.webkit.messageHandlers.passageWebView.postMessage({
                         type: 'message',
                         data: data,
                         webViewType: 'automation',
                         timestamp: Date.now()
                       });
-                      console.log('[Passage] Message sent successfully');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] Message sent successfully');
                     } else {
-                      console.warn('[Passage] Message handlers not available');
-                      console.log('[Passage] window.webkit:', typeof window.webkit);
-                      console.log('[Passage] window.webkit.messageHandlers:', typeof window.webkit?.messageHandlers);
-                      console.log('[Passage] passageWebView handler:', typeof window.webkit?.messageHandlers?.passageWebView);
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] window.webkit:', typeof window.webkit);
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] window.webkit.messageHandlers:', typeof window.webkit?.messageHandlers);
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] passageWebView handler:', typeof window.webkit?.messageHandlers?.passageWebView);
                     }
                   } catch (error) {
-                    console.error('[Passage] Error posting message:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error posting message:', error);
                   }
                 },
 
@@ -455,10 +477,10 @@ extension WebViewModalViewController {
                         timestamp: Date.now()
                       });
                     } else {
-                      console.warn('[Passage] Message handlers not available for navigation');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for navigation');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error navigating:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error navigating:', error);
                   }
                 },
 
@@ -471,10 +493,10 @@ extension WebViewModalViewController {
                         timestamp: Date.now()
                       });
                     } else {
-                      console.warn('[Passage] Message handlers not available for close');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for close');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error closing:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error closing:', error);
                   }
                 },
 
@@ -488,10 +510,10 @@ extension WebViewModalViewController {
                         timestamp: Date.now()
                       });
                     } else {
-                      console.warn('[Passage] Message handlers not available for setTitle');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for setTitle');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error setting title:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error setting title:', error);
                   }
                 },
 
@@ -508,7 +530,7 @@ extension WebViewModalViewController {
                 },
 
                 captureScreenshot: function() {
-                  console.log('[Passage] captureScreenshot called');
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] captureScreenshot called');
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       window.webkit.messageHandlers.passageWebView.postMessage({
@@ -516,17 +538,17 @@ extension WebViewModalViewController {
                         webViewType: 'automation',
                         timestamp: Date.now()
                       });
-                      console.log('[Passage] Screenshot capture request sent');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] Screenshot capture request sent');
                     } else {
-                      console.warn('[Passage] Message handlers not available for screenshot capture');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for screenshot capture');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error capturing screenshot:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error capturing screenshot:', error);
                   }
                 },
 
                 sendToBackend: function(apiPath, data, headers) {
-                  console.log('[Passage] sendToBackend called with apiPath:', apiPath);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] sendToBackend called with apiPath:', apiPath);
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       const message = {
@@ -542,17 +564,43 @@ extension WebViewModalViewController {
                       }
 
                       window.webkit.messageHandlers.passageWebView.postMessage(message);
-                      console.log('[Passage] sendToBackend request sent');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] sendToBackend request sent');
                     } else {
-                      console.warn('[Passage] Message handlers not available for sendToBackend');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for sendToBackend');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error in sendToBackend:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error in sendToBackend:', error);
+                  }
+                },
+
+                sendToSession: function(path, data, headers) {
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] sendToSession called with path:', path);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      const message = {
+                        type: 'sendToSession',
+                        path: path,
+                        data: data,
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      };
+
+                      if (headers) {
+                        message.headers = headers;
+                      }
+
+                      window.webkit.messageHandlers.passageWebView.postMessage(message);
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] sendToSession request sent');
+                    } else {
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for sendToSession');
+                    }
+                  } catch (error) {
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error in sendToSession:', error);
                   }
                 },
 
                 switchWebview: function() {
-                  console.log('[Passage] switchWebview called');
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] switchWebview called');
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       window.webkit.messageHandlers.passageWebView.postMessage({
@@ -560,17 +608,17 @@ extension WebViewModalViewController {
                         webViewType: 'automation',
                         timestamp: Date.now()
                       });
-                      console.log('[Passage] switchWebview request sent');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] switchWebview request sent');
                     } else {
-                      console.warn('[Passage] Message handlers not available for switchWebview');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for switchWebview');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error switching webview:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error switching webview:', error);
                   }
                 },
 
                 showBottomSheetModal: function(params) {
-                  console.log('[Passage] showBottomSheetModal called with params:', params);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] showBottomSheetModal called with params:', params);
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       window.webkit.messageHandlers.passageWebView.postMessage({
@@ -583,17 +631,17 @@ extension WebViewModalViewController {
                         webViewType: 'automation',
                         timestamp: Date.now()
                       });
-                      console.log('[Passage] showBottomSheetModal request sent');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] showBottomSheetModal request sent');
                     } else {
-                      console.warn('[Passage] Message handlers not available for showBottomSheetModal');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for showBottomSheetModal');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error showing bottom sheet:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error showing bottom sheet:', error);
                   }
                 },
 
                 changeAutomationUserAgent: function(userAgent) {
-                  console.log('[Passage] changeAutomationUserAgent called with:', userAgent);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] changeAutomationUserAgent called with:', userAgent);
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       window.webkit.messageHandlers.passageWebView.postMessage({
@@ -602,17 +650,17 @@ extension WebViewModalViewController {
                         webViewType: 'automation',
                         timestamp: Date.now()
                       });
-                      console.log('[Passage] changeAutomationUserAgent request sent');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] changeAutomationUserAgent request sent');
                     } else {
-                      console.warn('[Passage] Message handlers not available for changeAutomationUserAgent');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for changeAutomationUserAgent');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error changing user agent:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error changing user agent:', error);
                   }
                 },
 
                 openLink: function(url) {
-                  console.log('[Passage] openLink called with:', url);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] openLink called with:', url);
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       window.webkit.messageHandlers.passageWebView.postMessage({
@@ -621,12 +669,12 @@ extension WebViewModalViewController {
                         webViewType: 'automation',
                         timestamp: Date.now()
                       });
-                      console.log('[Passage] openLink request sent for URL:', url);
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] openLink request sent for URL:', url);
                     } else {
-                      console.warn('[Passage] Message handlers not available for openLink');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for openLink');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error opening link:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error opening link:', error);
                   }
                 }
               };
@@ -637,7 +685,7 @@ extension WebViewModalViewController {
 
                 window.history.pushState = function() {
                   originalPushState.apply(window.history, arguments);
-                  console.log('[Passage] pushState navigation to:', window.location.href);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] pushState navigation to:', window.location.href);
                   window.webkit.messageHandlers.passageWebView.postMessage({
                     type: 'clientNavigation',
                     navigationMethod: 'pushState',
@@ -649,7 +697,7 @@ extension WebViewModalViewController {
 
                 window.history.replaceState = function() {
                   originalReplaceState.apply(window.history, arguments);
-                  console.log('[Passage] replaceState navigation to:', window.location.href);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] replaceState navigation to:', window.location.href);
                   window.webkit.messageHandlers.passageWebView.postMessage({
                     type: 'clientNavigation',
                     navigationMethod: 'replaceState',
@@ -660,7 +708,7 @@ extension WebViewModalViewController {
                 };
 
                 window.addEventListener('popstate', function(event) {
-                  console.log('[Passage] popstate navigation to:', window.location.href);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] popstate navigation to:', window.location.href);
                   window.webkit.messageHandlers.passageWebView.postMessage({
                     type: 'clientNavigation',
                     navigationMethod: 'popstate',
@@ -671,7 +719,7 @@ extension WebViewModalViewController {
                 });
 
                 window.addEventListener('hashchange', function(event) {
-                  console.log('[Passage] hashchange navigation to:', window.location.href);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] hashchange navigation to:', window.location.href);
                   window.webkit.messageHandlers.passageWebView.postMessage({
                     type: 'clientNavigation',
                     navigationMethod: 'hashchange',
@@ -684,9 +732,9 @@ extension WebViewModalViewController {
                 });
               })();
 
-              console.log('[Passage] Automation webview script initialized successfully');
-              console.log('[Passage] window.passage.initialized:', window.passage.initialized);
-              console.log('[Passage] window.passage.webViewType:', window.passage.webViewType);
+              window.PASSAGE_INTERNAL_LOGGER.info('[Passage] Automation webview script initialized successfully');
+              window.PASSAGE_INTERNAL_LOGGER.info('[Passage] window.passage.initialized:', window.passage.initialized);
+              window.PASSAGE_INTERNAL_LOGGER.info('[Passage] window.passage.webViewType:', window.passage.webViewType);
 
               \(globalScript)
             })();
@@ -694,14 +742,35 @@ extension WebViewModalViewController {
         } else {
             return """
             (function() {
+              if (!window.PASSAGE_INTERNAL_LOGGER) {
+                window.PASSAGE_INTERNAL_LOGGER = {
+                  info: console.info.bind(console),
+                  warn: console.warn.bind(console),
+                  error: console.error.bind(console),
+                };
+              }
               if (window.passage && window.passage.initialized) {
-                console.log('[Passage] Already initialized, skipping');
+                window.PASSAGE_INTERNAL_LOGGER.info('[Passage] Already initialized, skipping');
                 return;
               }
 
               window.passage = {
                 initialized: true,
                 webViewType: 'ui',
+
+                createLogger: function() {
+                  return {
+                    info: function() {
+                      return window.PASSAGE_INTERNAL_LOGGER.info.apply(this, arguments);
+                    },
+                    warn: function() {
+                      return window.PASSAGE_INTERNAL_LOGGER.warn.apply(this, arguments);
+                    },
+                    error: function() {
+                      return window.PASSAGE_INTERNAL_LOGGER.error.apply(this, arguments);
+                    },
+                  };
+                },
 
                 postMessage: function(data) {
                   try {
@@ -713,10 +782,10 @@ extension WebViewModalViewController {
                         timestamp: Date.now()
                       });
                     } else {
-                      console.warn('[Passage] Message handlers not available');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error posting message:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error posting message:', error);
                   }
                 },
 
@@ -730,10 +799,10 @@ extension WebViewModalViewController {
                         timestamp: Date.now()
                       });
                     } else {
-                      console.warn('[Passage] Message handlers not available for navigation');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for navigation');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error navigating:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error navigating:', error);
                   }
                 },
 
@@ -746,10 +815,10 @@ extension WebViewModalViewController {
                         timestamp: Date.now()
                       });
                     } else {
-                      console.warn('[Passage] Message handlers not available for close');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for close');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error closing:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error closing:', error);
                   }
                 },
 
@@ -763,10 +832,10 @@ extension WebViewModalViewController {
                         timestamp: Date.now()
                       });
                     } else {
-                      console.warn('[Passage] Message handlers not available for setTitle');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for setTitle');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error setting title:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error setting title:', error);
                   }
                 },
 
@@ -783,7 +852,7 @@ extension WebViewModalViewController {
                 },
 
                 captureScreenshot: function() {
-                  console.log('[Passage] captureScreenshot called');
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] captureScreenshot called');
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       window.webkit.messageHandlers.passageWebView.postMessage({
@@ -791,17 +860,17 @@ extension WebViewModalViewController {
                         webViewType: 'ui',
                         timestamp: Date.now()
                       });
-                      console.log('[Passage] Screenshot capture request sent');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] Screenshot capture request sent');
                     } else {
-                      console.warn('[Passage] Message handlers not available for screenshot capture');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for screenshot capture');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error capturing screenshot:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error capturing screenshot:', error);
                   }
                 },
 
                 sendToBackend: function(apiPath, data, headers) {
-                  console.log('[Passage] sendToBackend called with apiPath:', apiPath);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] sendToBackend called with apiPath:', apiPath);
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       const message = {
@@ -817,17 +886,43 @@ extension WebViewModalViewController {
                       }
 
                       window.webkit.messageHandlers.passageWebView.postMessage(message);
-                      console.log('[Passage] sendToBackend request sent');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] sendToBackend request sent');
                     } else {
-                      console.warn('[Passage] Message handlers not available for sendToBackend');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for sendToBackend');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error in sendToBackend:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error in sendToBackend:', error);
+                  }
+                },
+
+                sendToSession: function(path, data, headers) {
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] sendToSession called with path:', path);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      const message = {
+                        type: 'sendToSession',
+                        path: path,
+                        data: data,
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      };
+
+                      if (headers) {
+                        message.headers = headers;
+                      }
+
+                      window.webkit.messageHandlers.passageWebView.postMessage(message);
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] sendToSession request sent');
+                    } else {
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for sendToSession');
+                    }
+                  } catch (error) {
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error in sendToSession:', error);
                   }
                 },
 
                 switchWebview: function() {
-                  console.log('[Passage] switchWebview called');
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] switchWebview called');
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       window.webkit.messageHandlers.passageWebView.postMessage({
@@ -835,17 +930,17 @@ extension WebViewModalViewController {
                         webViewType: 'ui',
                         timestamp: Date.now()
                       });
-                      console.log('[Passage] switchWebview request sent');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] switchWebview request sent');
                     } else {
-                      console.warn('[Passage] Message handlers not available for switchWebview');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for switchWebview');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error switching webview:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error switching webview:', error);
                   }
                 },
 
                 showBottomSheetModal: function(params) {
-                  console.log('[Passage] showBottomSheetModal called with params:', params);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] showBottomSheetModal called with params:', params);
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       window.webkit.messageHandlers.passageWebView.postMessage({
@@ -858,17 +953,17 @@ extension WebViewModalViewController {
                         webViewType: 'ui',
                         timestamp: Date.now()
                       });
-                      console.log('[Passage] showBottomSheetModal request sent');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] showBottomSheetModal request sent');
                     } else {
-                      console.warn('[Passage] Message handlers not available for showBottomSheetModal');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for showBottomSheetModal');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error showing bottom sheet:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error showing bottom sheet:', error);
                   }
                 },
 
                 openLink: function(url) {
-                  console.log('[Passage] openLink called with:', url);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] openLink called with:', url);
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       window.webkit.messageHandlers.passageWebView.postMessage({
@@ -877,17 +972,17 @@ extension WebViewModalViewController {
                         webViewType: 'ui',
                         timestamp: Date.now()
                       });
-                      console.log('[Passage] openLink request sent for URL:', url);
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] openLink request sent for URL:', url);
                     } else {
-                      console.warn('[Passage] Message handlers not available for openLink');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for openLink');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error opening link:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error opening link:', error);
                   }
                 },
 
                 enableKeyboard: function() {
-                  console.log('[Passage] enableKeyboard called');
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] enableKeyboard called');
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       window.webkit.messageHandlers.passageWebView.postMessage({
@@ -895,17 +990,17 @@ extension WebViewModalViewController {
                         webViewType: 'ui',
                         timestamp: Date.now()
                       });
-                      console.log('[Passage] enableKeyboard request sent');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] enableKeyboard request sent');
                     } else {
-                      console.warn('[Passage] Message handlers not available for enableKeyboard');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for enableKeyboard');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error enabling keyboard:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error enabling keyboard:', error);
                   }
                 },
 
                 disableKeyboard: function() {
-                  console.log('[Passage] disableKeyboard called');
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] disableKeyboard called');
                   try {
                     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
                       window.webkit.messageHandlers.passageWebView.postMessage({
@@ -913,12 +1008,12 @@ extension WebViewModalViewController {
                         webViewType: 'ui',
                         timestamp: Date.now()
                       });
-                      console.log('[Passage] disableKeyboard request sent');
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] disableKeyboard request sent');
                     } else {
-                      console.warn('[Passage] Message handlers not available for disableKeyboard');
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for disableKeyboard');
                     }
                   } catch (error) {
-                    console.error('[Passage] Error disabling keyboard:', error);
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error disabling keyboard:', error);
                   }
                 }
               };
@@ -929,7 +1024,7 @@ extension WebViewModalViewController {
 
                 window.history.pushState = function() {
                   originalPushState.apply(window.history, arguments);
-                  console.log('[Passage] pushState navigation to:', window.location.href);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] pushState navigation to:', window.location.href);
                   window.webkit.messageHandlers.passageWebView.postMessage({
                     type: 'clientNavigation',
                     navigationMethod: 'pushState',
@@ -941,7 +1036,7 @@ extension WebViewModalViewController {
 
                 window.history.replaceState = function() {
                   originalReplaceState.apply(window.history, arguments);
-                  console.log('[Passage] replaceState navigation to:', window.location.href);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] replaceState navigation to:', window.location.href);
                   window.webkit.messageHandlers.passageWebView.postMessage({
                     type: 'clientNavigation',
                     navigationMethod: 'replaceState',
@@ -952,7 +1047,7 @@ extension WebViewModalViewController {
                 };
 
                 window.addEventListener('popstate', function(event) {
-                  console.log('[Passage] popstate navigation to:', window.location.href);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] popstate navigation to:', window.location.href);
                   window.webkit.messageHandlers.passageWebView.postMessage({
                     type: 'clientNavigation',
                     navigationMethod: 'popstate',
@@ -963,7 +1058,7 @@ extension WebViewModalViewController {
                 });
 
                 window.addEventListener('hashchange', function(event) {
-                  console.log('[Passage] hashchange navigation to:', window.location.href);
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] hashchange navigation to:', window.location.href);
                   window.webkit.messageHandlers.passageWebView.postMessage({
                     type: 'clientNavigation',
                     navigationMethod: 'hashchange',
@@ -976,7 +1071,7 @@ extension WebViewModalViewController {
                 });
               })();
 
-              console.log('[Passage] UI webview script initialized with full window.passage object');
+              window.PASSAGE_INTERNAL_LOGGER.info('[Passage] UI webview script initialized with full window.passage object');
             })();
             """
         }

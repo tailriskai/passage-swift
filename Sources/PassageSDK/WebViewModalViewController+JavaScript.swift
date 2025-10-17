@@ -421,6 +421,82 @@ extension WebViewModalViewController {
         passageLogger.debug("[SEND_TO_BACKEND] Request sent")
     }
 
+    private func sendToSession(path: String, data: Any, headers: [String: String]? = nil, completion: @escaping (Bool, String?) -> Void) {
+        passageLogger.info("[SEND_TO_SESSION] ========== SENDING DATA TO SESSION ==========")
+        passageLogger.info("[SEND_TO_SESSION] Path: \(path)")
+
+        guard let remoteControl = remoteControl else {
+            passageLogger.error("[SEND_TO_SESSION] ❌ No remote control available")
+            completion(false, "No remote control available")
+            return
+        }
+
+        let baseUrl = remoteControl.getSessionUrl().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let fullUrlString = baseUrl + path
+
+        guard let url = URL(string: fullUrlString) else {
+            passageLogger.error("[SEND_TO_SESSION] ❌ Invalid URL: \(fullUrlString)")
+            completion(false, "Invalid URL")
+            return
+        }
+
+        passageLogger.info("[SEND_TO_SESSION] Full URL: \(fullUrlString)")
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: data, options: []) else {
+            passageLogger.error("[SEND_TO_SESSION] ❌ Failed to serialize data to JSON")
+            completion(false, "Failed to serialize data")
+            return
+        }
+
+        passageLogger.debug("[SEND_TO_SESSION] JSON payload size: \(jsonData.count) bytes")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+        request.timeoutInterval = 30.0
+
+        if let headers = headers {
+            for (key, value) in headers {
+                request.setValue(value, forHTTPHeaderField: key)
+                passageLogger.debug("[SEND_TO_SESSION] Added custom header: \(key)")
+            }
+        }
+
+        if headers?["x-intent-token"] == nil, let intentToken = remoteControl.getIntentToken() {
+            request.setValue(intentToken, forHTTPHeaderField: "x-intent-token")
+            passageLogger.debug("[SEND_TO_SESSION] Added x-intent-token header from remote control")
+        }
+
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                passageLogger.error("[SEND_TO_SESSION] ❌ Request failed: \(error.localizedDescription)")
+                completion(false, error.localizedDescription)
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                passageLogger.error("[SEND_TO_SESSION] ❌ Invalid response type")
+                completion(false, "Invalid response")
+                return
+            }
+
+            passageLogger.info("[SEND_TO_SESSION] Response status: \(httpResponse.statusCode)")
+
+            if (200...299).contains(httpResponse.statusCode) {
+                passageLogger.info("[SEND_TO_SESSION] ✅ Request succeeded")
+                completion(true, nil)
+            } else {
+                let errorMessage = "HTTP \(httpResponse.statusCode)"
+                passageLogger.error("[SEND_TO_SESSION] ❌ Request failed with status: \(errorMessage)")
+                completion(false, errorMessage)
+            }
+        }
+
+        task.resume()
+        passageLogger.debug("[SEND_TO_SESSION] Request sent")
+    }
+
     func handlePassageMessage(_ data: [String: Any], webViewType: String) {
         if let commandId = data["commandId"] as? String,
            let type = data["type"] as? String {
@@ -614,6 +690,34 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                             passageLogger.error("[WEBVIEW] sendToBackend failed: \(error)")
                         } else if success {
                             passageLogger.debug("[WEBVIEW] sendToBackend succeeded")
+                        }
+                    }
+
+                case "sendToSession":
+                    passageLogger.info("[WEBVIEW] sendToSession called from \(webViewType) webview")
+
+                    guard let path = body["path"] as? String else {
+                        passageLogger.error("[WEBVIEW] sendToSession missing path parameter")
+                        return
+                    }
+
+                    guard let data = body["data"] else {
+                        passageLogger.error("[WEBVIEW] sendToSession missing data parameter")
+                        return
+                    }
+
+                    let headers = body["headers"] as? [String: String]
+
+                    passageLogger.debug("[WEBVIEW] sendToSession - path: \(path)")
+                    if let headers = headers {
+                        passageLogger.debug("[WEBVIEW] sendToSession - headers: \(headers.keys.joined(separator: ", "))")
+                    }
+
+                    sendToSession(path: path, data: data, headers: headers) { success, error in
+                        if let error = error {
+                            passageLogger.error("[WEBVIEW] sendToSession failed: \(error)")
+                        } else if success {
+                            passageLogger.debug("[WEBVIEW] sendToSession succeeded")
                         }
                     }
 
