@@ -17,6 +17,7 @@ class ViewController: UIViewController {
     private var resultTextView: UITextView!
     private var integrationLabel: UILabel!
     private var integrationButton: UIButton!
+    private var resourcesLabel: UILabel!
     private var tokenLabel: UILabel!
     private var tokenTextView: UITextView!
     private var modeSegmentedControl: UISegmentedControl!
@@ -139,6 +140,15 @@ class ViewController: UIViewController {
         integrationButton.addTarget(self, action: #selector(integrationButtonTapped), for: .touchUpInside)
         integrationButton.isEnabled = false  // Disable while loading integrations
         view.addSubview(integrationButton)
+
+        // Resources Label
+        resourcesLabel = UILabel()
+        resourcesLabel.text = ""
+        resourcesLabel.font = .systemFont(ofSize: 14)
+        resourcesLabel.textColor = .secondaryLabel
+        resourcesLabel.numberOfLines = 0
+        resourcesLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(resourcesLabel)
 
         // Clear Cookies Stack View (for auto-fetch mode)
         clearCookiesStackView = UIStackView()
@@ -301,8 +311,13 @@ class ViewController: UIViewController {
             integrationButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             integrationButton.heightAnchor.constraint(equalToConstant: 44),
 
+            // Resources Label
+            resourcesLabel.topAnchor.constraint(equalTo: integrationButton.bottomAnchor, constant: 8),
+            resourcesLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            resourcesLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+
             // Clear Cookies Stack View (for auto-fetch mode)
-            clearCookiesStackView.topAnchor.constraint(equalTo: integrationButton.bottomAnchor, constant: 16),
+            clearCookiesStackView.topAnchor.constraint(equalTo: resourcesLabel.bottomAnchor, constant: 16),
             clearCookiesStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             clearCookiesStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
 
@@ -343,6 +358,9 @@ class ViewController: UIViewController {
 
         // Set initial mode state
         modeChanged()
+
+        // Update resources display for default selection
+        updateResourcesDisplay()
     }
 
     private func getSelectedIntegrationLabel() -> String {
@@ -352,10 +370,14 @@ class ViewController: UIViewController {
     @objc private func integrationButtonTapped() {
         let alertController = UIAlertController(title: "Select Integration", message: nil, preferredStyle: .actionSheet)
 
-        for option in integrationOptions {
+        // Sort integrations alphabetically by label
+        let sortedOptions = integrationOptions.sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+
+        for option in sortedOptions {
             let action = UIAlertAction(title: option.label, style: .default) { [weak self] _ in
                 self?.selectedIntegration = option.value
                 self?.integrationButton.setTitle(option.label, for: .normal)
+                self?.updateResourcesDisplay()
                 print("Selected integration: \(option.label)")
             }
 
@@ -378,6 +400,39 @@ class ViewController: UIViewController {
         present(alertController, animated: true)
     }
 
+    private func updateResourcesDisplay() {
+        // Find the selected integration's resources
+        guard let selectedOption = integrationOptions.first(where: { $0.value == selectedIntegration }) else {
+            resourcesLabel.text = ""
+            return
+        }
+
+        let resources = selectedOption.resources
+
+        if resources.isEmpty {
+            resourcesLabel.text = "No resources available for this integration"
+        } else {
+            var resourceText = "Available resources:\n"
+
+            for resource in resources {
+                if let name = resource["name"] as? String {
+                    resourceText += "• \(name)"
+
+                    if let operations = resource["operations"] as? [String: Any] {
+                        let operationNames = operations.keys.joined(separator: ", ")
+                        if !operationNames.isEmpty {
+                            resourceText += " (Operations: \(operationNames))"
+                        }
+                    }
+
+                    resourceText += "\n"
+                }
+            }
+
+            resourcesLabel.text = resourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
     @objc private func modeChanged() {
         let isManualMode = modeSegmentedControl.selectedSegmentIndex == 1
 
@@ -389,6 +444,7 @@ class ViewController: UIViewController {
         // Update integration label visibility
         integrationLabel.isHidden = isManualMode
         integrationButton.isHidden = isManualMode
+        resourcesLabel.isHidden = isManualMode
         clearCookiesStackView.isHidden = isManualMode
         recordModeStackView.isHidden = isManualMode
 
@@ -847,6 +903,9 @@ class ViewController: UIViewController {
                 // Update button title with the current selection
                 self?.integrationButton.setTitle(self?.getSelectedIntegrationLabel(), for: .normal)
 
+                // Update the resources display for the selected integration
+                self?.updateResourcesDisplay()
+
                 // Enable the button since integrations are now loaded
                 self?.integrationButton.isEnabled = true
             }
@@ -863,6 +922,9 @@ class ViewController: UIViewController {
             // Enable the button with the default selection
             self?.integrationButton.isEnabled = true
             self?.integrationButton.setTitle(self?.getSelectedIntegrationLabel(), for: .normal)
+
+            // Update the resources display
+            self?.updateResourcesDisplay()
         }
     }
 
@@ -928,8 +990,46 @@ class ViewController: UIViewController {
             let jsonData = try JSONSerialization.data(withJSONObject: requestBody)
             request.httpBody = jsonData
 
-            print("Making API request to: \(url)")
-            print("Request body: \(String(data: jsonData, encoding: .utf8) ?? "nil")")
+            print("\n========== INTENT TOKEN REQUEST DETAILS ==========")
+            print("📍 URL: \(url)")
+            print("\n📋 Headers:")
+            print("  - accept: */*")
+            print("  - accept-language: en-US,en;q=0.9")
+            print("  - authorization: Publishable \(defaultPublishableKey)")
+            print("  - content-type: application/json")
+            print("  - priority: u=1, i")
+            print("  - sec-ch-ua: \"Not;A=Brand\";v=\"99\", \"Google Chrome\";v=\"139\", \"Chromium\";v=\"139\"")
+            print("  - sec-ch-ua-mobile: ?0")
+            print("  - sec-ch-ua-platform: \"macOS\"")
+            print("  - sec-fetch-dest: empty")
+            print("  - sec-fetch-mode: cors")
+            print("  - sec-fetch-site: cross-site")
+
+            print("\n📦 Request Body:")
+            if let prettyJsonData = try? JSONSerialization.data(withJSONObject: requestBody, options: .prettyPrinted),
+               let prettyJsonString = String(data: prettyJsonData, encoding: .utf8) {
+                print(prettyJsonString)
+            } else {
+                print(String(data: jsonData, encoding: .utf8) ?? "Unable to format JSON")
+            }
+
+            print("\n🔧 Integration Details:")
+            print("  - Selected Integration: \(selectedIntegration)")
+            print("  - Clear Cookies: \(clearCookiesSwitch.isOn)")
+            print("  - Record Mode: \(recordModeSwitch.isOn)")
+
+            if !resourcesDict.isEmpty {
+                print("\n📚 Resources Requested:")
+                for (resourceName, operations) in resourcesDict {
+                    print("  - Resource: \(resourceName)")
+                    for (operationName, _) in operations {
+                        print("    • Operation: \(operationName)")
+                    }
+                }
+            } else {
+                print("\n📚 No resources requested for this integration")
+            }
+            print("================================================\n")
 
             URLSession.shared.dataTask(with: request) { data, response, error in
                 if let error = error {
