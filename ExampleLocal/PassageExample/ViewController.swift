@@ -7,6 +7,7 @@ class ViewController: UIViewController {
     // MARK: - Configuration URLs
     private let passageUIUrl = "http://localhost:3001"
     private let passageAPIUrl = "http://localhost:3000"
+    private let passageSessionUrl = "http://localhost:8787"
     private let passageSocketUrl = "http://localhost:3000"
     private let defaultPublishableKey = "pk-live-0d017c4c-307e-441c-8b72-cb60f64f77f8"
 
@@ -36,12 +37,12 @@ class ViewController: UIViewController {
     // Record mode bottom sheet
     private var recordModeBottomSheet: RecordModeBottomSheet?
     private var isRecordModeActive = false
-    
+
     // Constraint references for dynamic layout
     private var connectButtonTopConstraint: NSLayoutConstraint!
     private var initializeButtonTopConstraint: NSLayoutConstraint!
     private var resultTextViewTopConstraint: NSLayoutConstraint!
-    
+
     private var integrationOptions: [(value: String, label: String, resources: [[String: Any]])] = [
         ("passage-test-captcha", "Passage Test Integration (with CAPTCHA)", []),
         ("passage-test", "Passage Test Integration", []),
@@ -73,6 +74,7 @@ class ViewController: UIViewController {
         let config = PassageConfig(
             uiUrl: passageUIUrl,
             apiUrl: passageAPIUrl,
+            sessionUrl: passageSessionUrl,
             socketUrl: passageSocketUrl,
             debug: true
         )
@@ -80,6 +82,7 @@ class ViewController: UIViewController {
         print("Configuring SDK with:")
         print("  - UI URL: \(config.uiUrl)")
         print("  - API URL: \(config.apiUrl)")
+        print("  - Session URL: \(config.sessionUrl)")
         print("  - Socket URL: \(config.socketUrl)")
         print("  - Socket Namespace: \(config.socketNamespace)")
         print("  - Debug: \(config.debug)")
@@ -1348,7 +1351,7 @@ class ViewController: UIViewController {
                 resultText += String(describing: message)
             }
         }
-        
+
         resultTextView.text = resultText
     }
 }
@@ -1361,12 +1364,12 @@ extension ViewController: UITextViewDelegate {
             if let placeholderLabel = textView.viewWithTag(999) as? UILabel {
                 placeholderLabel.isHidden = !textView.text.isEmpty
             }
-            
+
             // Update button states
             updateButtonStates()
         }
     }
-    
+
     func textViewDidBeginEditing(_ textView: UITextView) {
         if textView == tokenTextView {
             // Hide placeholder when editing begins
@@ -1375,7 +1378,7 @@ extension ViewController: UITextViewDelegate {
             }
         }
     }
-    
+
     func textViewDidEndEditing(_ textView: UITextView) {
         if textView == tokenTextView {
             // Show placeholder if text is empty

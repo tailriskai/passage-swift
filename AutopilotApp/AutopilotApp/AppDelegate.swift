@@ -16,6 +16,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         let config = PassageConfig(
             uiUrl: "http://localhost:3001",
             apiUrl: "http://localhost:3000",
+            sessionUrl: "http://localhost:8787",
             socketUrl: "http://localhost:3000",
             debug: true,
             agentName: "passage-autopilot"
