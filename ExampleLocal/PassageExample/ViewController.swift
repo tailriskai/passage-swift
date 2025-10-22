@@ -33,6 +33,7 @@ class ViewController: UIViewController {
     private var selectedIntegration: String = "kroger"
     private var exitCallCount: Int = 0  // Track onExit callback calls
     private var isInitialized: Bool = false  // Track SDK initialization state
+    private var pendingDeepLinkToken: String? = nil  // Track token from deep link for auto-opening
 
     // Record mode bottom sheet
     private var recordModeBottomSheet: RecordModeBottomSheet?
@@ -763,7 +764,18 @@ class ViewController: UIViewController {
                     // Update button states based on current token
                     self?.updateButtonStates()
 
-                    self?.resultTextView.text = "✅ SDK initialized successfully!\n\nYou can now open Passage with the provided token.\n\nPublishable Key: \(publishableKey)"
+                        // Check if this was triggered by a deep link
+                        if let pendingToken = self?.pendingDeepLinkToken {
+                            self?.pendingDeepLinkToken = nil  // Clear the pending token
+                            self?.resultTextView.text = "✅ SDK initialized successfully!\n\n🔗 Auto-opening Passage from deep link...\n\nPublishable Key: \(publishableKey)"
+
+                            // Auto-open Passage with the token
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                self?.openPassage(with: pendingToken)
+                            }
+                        } else {
+                            self?.resultTextView.text = "✅ SDK initialized successfully!\n\nYou can now open Passage with the provided token.\n\nPublishable Key: \(publishableKey)"
+                        }
                 }
             } catch {
                 DispatchQueue.main.async { [weak self] in
@@ -1353,6 +1365,36 @@ class ViewController: UIViewController {
         }
 
         resultTextView.text = resultText
+    }
+    
+    // MARK: - Deep Link Handling
+    func handleDeepLinkIntentToken(_ token: String) {
+        // Store the token for auto-opening after initialization
+        pendingDeepLinkToken = token
+
+        // Switch to manual mode to show the token input
+        modeSegmentedControl.selectedSegmentIndex = 1
+        modeChanged()
+
+        // Set the token in the text view
+        tokenTextView.text = token
+
+        // Update placeholder visibility
+        if let placeholderLabel = tokenTextView.viewWithTag(999) as? UILabel {
+            placeholderLabel.isHidden = !tokenTextView.text.isEmpty
+        }
+
+        // Update button states
+        updateButtonStates()
+
+        // Show a message that we're processing the deep link
+        resultTextView.text = "🔗 Deep link received!\n\nInitializing SDK with provided token..."
+
+        // Parse JWT to check details
+        logTokenDetails(token)
+
+        // Initialize SDK with the provided token
+        initializeSDK(with: token)
     }
 }
 
