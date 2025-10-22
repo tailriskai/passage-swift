@@ -1707,7 +1707,12 @@ class RemoteControlManager {
         }
 
         guard let type = RemoteCommand.CommandType(rawValue: typeStr) else {
-            passageLogger.error("[COMMAND HANDLER] ❌ Unknown command type: \(typeStr)")
+            passageLogger.debug("[COMMAND HANDLER] Unsupported command type: \(typeStr)")
+            sendError(
+                commandId: id,
+                error: "Unsupported command type: \(typeStr)",
+                data: ["errorType": "unsupported_command", "commandType": typeStr]
+            )
             return
         }
 
@@ -1986,12 +1991,12 @@ class RemoteControlManager {
         }
     }
 
-    private func sendError(commandId: String, error: String) {
+    private func sendError(commandId: String, error: String, data: Any? = nil) {
         // Error results don't typically include page data in React Native either
         let result = CommandResult(
             id: commandId,
             status: "error",
-            data: nil,
+            data: data != nil ? AnyCodable(data!) : nil,
             pageData: nil,
             error: error
         )
