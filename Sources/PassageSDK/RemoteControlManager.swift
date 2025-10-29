@@ -2766,6 +2766,8 @@ class RemoteControlManager {
 
         if let socket = socket {
             passageLogger.info("[REMOTE CONTROL] Socket status before disconnect: \(socket.status)")
+            socket.removeAllHandlers()
+            passageLogger.info("[REMOTE CONTROL] Socket event handlers removed")
             socket.disconnect()
             passageLogger.info("[REMOTE CONTROL] Socket disconnect called")
         } else {
