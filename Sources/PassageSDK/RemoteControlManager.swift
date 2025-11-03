@@ -66,6 +66,15 @@ struct SuccessUrl: Codable {
     }
 }
 
+struct SessionCommandResponseBody: Codable {
+  let commandResponse: SessionCommandResponse
+}
+
+struct SessionCommandResponse: Codable {
+    let at: String
+    let data: CommandResult
+}
+
 // AnyCodable is defined in PassageAnalytics.swift
 
 // MARK: - RemoteControlManager
@@ -2430,14 +2439,12 @@ class RemoteControlManager {
             iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             let timestamp = iso8601Formatter.string(from: Date())
 
-            let sessionBusBody: [String: Any] = [
-                "commandResponse": [
-                    "at": timestamp,
-                    "data": result
-                ]
-            ]
-
-            let jsonData = try JSONSerialization.data(withJSONObject: sessionBusBody, options: [])
+            let jsonData = try JSONEncoder().encode(SessionCommandResponseBody(
+              commandResponse: SessionCommandResponse(
+                at: timestamp,
+                data: result
+              )
+            ))
             request.httpBody = jsonData
 
             passageLogger.info("[REMOTE CONTROL] Sending HTTP POST request to session bus...")
