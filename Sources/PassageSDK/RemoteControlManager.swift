@@ -66,6 +66,15 @@ struct SuccessUrl: Codable {
     }
 }
 
+struct SessionCommandResponseBody: Codable {
+  let commandResponse: SessionCommandResponse
+}
+
+struct SessionCommandResponse: Codable {
+    let at: String
+    let data: CommandResult
+}
+
 // AnyCodable is defined in PassageAnalytics.swift
 
 // MARK: - RemoteControlManager
@@ -2393,8 +2402,67 @@ class RemoteControlManager {
                     passageLogger.debug("[REMOTE CONTROL] Result sent successfully")
                 }
             }.resume()
+
+            // Also send to session bus
+            sendResultToSessionBus(result)
         } catch {
             passageLogger.error("[REMOTE CONTROL] Error encoding result: \(error)")
+        }
+    }
+
+    private func sendResultToSessionBus(_ result: CommandResult) {
+        guard let intentToken = intentToken else {
+            passageLogger.error("[REMOTE CONTROL] No intent token available for sending result to session bus")
+            return
+        }
+
+        let sessionBaseUrl = config.sessionUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let path = "/command/response/record"
+        let fullUrlString = sessionBaseUrl + path
+
+        passageLogger.info("[REMOTE CONTROL] Sending result to session bus: \(fullUrlString)")
+        passageLogger.info("[REMOTE CONTROL] Command ID: \(result.id), Status: \(result.status)")
+
+        guard let url = URL(string: fullUrlString) else {
+            passageLogger.error("[REMOTE CONTROL] Invalid session bus URL: \(fullUrlString)")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(intentToken, forHTTPHeaderField: "x-intent-token")
+        request.timeoutInterval = 30.0
+
+        do {
+            let iso8601Formatter = ISO8601DateFormatter()
+            iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let timestamp = iso8601Formatter.string(from: Date())
+
+            let jsonData = try JSONEncoder().encode(SessionCommandResponseBody(
+              commandResponse: SessionCommandResponse(
+                at: timestamp,
+                data: result
+              )
+            ))
+            request.httpBody = jsonData
+
+            passageLogger.info("[REMOTE CONTROL] Sending HTTP POST request to session bus...")
+
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    passageLogger.error("[REMOTE CONTROL] Error sending result to session bus: \(error)")
+                } else if let httpResponse = response as? HTTPURLResponse {
+                    passageLogger.info("[REMOTE CONTROL] Result sent to session bus successfully - Status: \(httpResponse.statusCode)")
+                    if let data = data, let responseString = String(data: data, encoding: .utf8) {
+                        passageLogger.debug("[REMOTE CONTROL] Session bus response: \(responseString)")
+                    }
+                } else {
+                    passageLogger.debug("[REMOTE CONTROL] Result sent to session bus successfully")
+                }
+            }.resume()
+        } catch {
+            passageLogger.error("[REMOTE CONTROL] Error encoding result for session bus: \(error)")
         }
     }
 
