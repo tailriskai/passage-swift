@@ -487,8 +487,8 @@ extension WebViewModalViewController {
 
         passageLogger.info("[WEBSITE_MODAL] Creating preloaded WebsiteModalViewController for URL: \(urlObj.absoluteString)")
 
-        // Create the website modal view controller
-        let websiteModalVC = WebsiteModalViewController(url: urlObj)
+        // Create the website modal view controller with automation user agent
+        let websiteModalVC = WebsiteModalViewController(url: urlObj, customUserAgent: automationUserAgent)
 
         // Configure presentation style as a sheet with large detent
         websiteModalVC.modalPresentationStyle = UIModalPresentationStyle.pageSheet
@@ -572,8 +572,8 @@ extension WebViewModalViewController {
         } else {
             passageLogger.info("[WEBSITE_MODAL] 🆕 Creating new WebsiteModalViewController for URL: \(urlObj.absoluteString)")
 
-            // Create a new website modal view controller
-            websiteModalVC = WebsiteModalViewController(url: urlObj)
+            // Create a new website modal view controller with automation user agent
+            websiteModalVC = WebsiteModalViewController(url: urlObj, customUserAgent: automationUserAgent)
 
             // Configure presentation style as a sheet with large detent
             websiteModalVC.modalPresentationStyle = UIModalPresentationStyle.pageSheet

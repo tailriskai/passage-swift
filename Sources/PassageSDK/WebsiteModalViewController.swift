@@ -9,6 +9,7 @@ import UIKit
 @available(iOS 16.0, *)
 struct WebsiteModalView: View {
     let url: URL
+    let customUserAgent: String?
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var viewModel: WebsiteModalViewModel
 
@@ -20,7 +21,7 @@ struct WebsiteModalView: View {
                     Color.clear
                         .frame(height: geometry.safeAreaInsets.top + 57)
 
-                    WebViewRepresentable(url: url, viewModel: viewModel)
+                    WebViewRepresentable(url: url, customUserAgent: customUserAgent, viewModel: viewModel)
                 }
                 .ignoresSafeArea(.all)
 
@@ -122,6 +123,7 @@ class WebsiteModalViewModel: ObservableObject {
 @available(iOS 16.0, *)
 struct WebViewRepresentable: UIViewRepresentable {
     let url: URL
+    let customUserAgent: String?
     @ObservedObject var viewModel: WebsiteModalViewModel
 
     func makeCoordinator() -> Coordinator {
@@ -140,6 +142,12 @@ struct WebViewRepresentable: UIViewRepresentable {
             passageLogger.info("[WEBSITE_MODAL]   - ViewModel.isLoading: \(viewModel.isLoading)")
 
             existingWebView.navigationDelegate = context.coordinator
+
+            // Apply custom user agent if provided (in case it wasn't set during preload)
+            if let customUserAgent = customUserAgent {
+                existingWebView.customUserAgent = customUserAgent
+                passageLogger.debug("[WEBSITE_MODAL] Applied custom user agent to existing webView: \(customUserAgent)")
+            }
 
             // Check if we need to navigate to a different URL
             if let currentURL = existingWebView.url, currentURL.absoluteString != url.absoluteString {
@@ -168,6 +176,12 @@ struct WebViewRepresentable: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
+
+        // Apply custom user agent if provided
+        if let customUserAgent = customUserAgent {
+            webView.customUserAgent = customUserAgent
+            passageLogger.debug("[WEBSITE_MODAL] Applied custom user agent to webView: \(customUserAgent)")
+        }
 
         // Store reference to webView in viewModel
         viewModel.webView = webView
@@ -231,13 +245,18 @@ struct WebViewRepresentable: UIViewRepresentable {
 @available(iOS 16.0, *)
 class WebsiteModalViewController: UIViewController {
     private let url: URL
+    private let customUserAgent: String?
     private let viewModel: WebsiteModalViewModel
 
-    init(url: URL) {
+    init(url: URL, customUserAgent: String? = nil) {
         self.url = url
+        self.customUserAgent = customUserAgent
         self.viewModel = WebsiteModalViewModel()
         super.init(nibName: nil, bundle: nil)
         passageLogger.info("[WEBSITE_MODAL] 🏗️ WebsiteModalViewController initialized for URL: \(url.absoluteString)")
+        if let ua = customUserAgent {
+            passageLogger.info("[WEBSITE_MODAL] Custom user agent provided: \(ua)")
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -248,7 +267,7 @@ class WebsiteModalViewController: UIViewController {
         super.viewDidLoad()
 
         // Create SwiftUI view with shared viewModel
-        let websiteView = WebsiteModalView(url: url, viewModel: viewModel)
+        let websiteView = WebsiteModalView(url: url, customUserAgent: customUserAgent, viewModel: viewModel)
         let hostingController = UIHostingController(rootView: websiteView)
 
         // Add as child view controller
