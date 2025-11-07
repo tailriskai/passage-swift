@@ -124,7 +124,7 @@ extension WebViewModalViewController {
             }
 
             // Check for OAuth success
-            if let code = params["code"] {
+            if params["code"] != nil {
                 passageLogger.info("[OAUTH] OAuth authorization successful, code received")
                 // The web application should handle the code exchange
             }
@@ -494,7 +494,7 @@ extension WebViewModalViewController {
         websiteModalVC.modalPresentationStyle = .pageSheet
 
         if let sheet = websiteModalVC.sheetPresentationController {
-            sheet.detents = [.large()]
+            sheet.detents = [UISheetPresentationController.Detent.large()]
             sheet.prefersGrabberVisible = true
             sheet.prefersScrollingExpandsWhenScrolledToEdge = false
         }
@@ -580,7 +580,7 @@ extension WebViewModalViewController {
 
             if let sheet = websiteModalVC.sheetPresentationController {
                 // Set large detent (partial height from bottom)
-                sheet.detents = [.large()]
+                sheet.detents = [UISheetPresentationController.Detent.large()]
 
                 // Allow user dismissal via swipe/tap outside
                 sheet.prefersGrabberVisible = true
