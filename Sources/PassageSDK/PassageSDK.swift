@@ -1120,6 +1120,15 @@ public class Passage: NSObject {
         // Reset webview URLs to ensure clean state for next session
         webViewController?.resetURLState()
 
+        // Clear preloaded website modal state
+        if #available(iOS 16.0, *) {
+            if webViewController?.preloadedWebsiteModalVC != nil {
+                passageLogger.info("[SDK] Clearing preloaded website modal state")
+                webViewController?.preloadedWebsiteModalVC = nil
+                webViewController?.preloadedWebsiteURL = nil
+            }
+        }
+
         // Clear callbacks synchronously first to prevent race conditions
         passageLogger.info("[SDK] Clearing callbacks SYNCHRONOUSLY first...")
         self.navigationCompletionHandler = nil

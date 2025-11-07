@@ -78,6 +78,10 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
 
     var wasShowingAutomationBeforeClose: Bool = false
 
+    // Preloaded website modal state (iOS 16.0+)
+    var preloadedWebsiteModalVC: Any? // WebsiteModalViewController on iOS 16+
+    var preloadedWebsiteURL: String?
+
     var closeButtonPressCount: Int = 0
 
     var isNavigatingFromBackButton: Bool = false

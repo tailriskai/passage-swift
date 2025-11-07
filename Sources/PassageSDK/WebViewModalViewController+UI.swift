@@ -452,5 +452,150 @@ extension WebViewModalViewController {
             }
         }
     }
+
+    /// Preload a website in a hidden modal for faster presentation later
+    /// - Parameter url: The URL string to preload
+    @available(iOS 16.0, *)
+    func preloadWebsiteModal(url: String) {
+        passageLogger.info("[WEBSITE_MODAL] 🔄 preloadWebsiteModal called with URL: \(url)")
+
+        // Validate URL
+        guard let urlObj = URL(string: url) else {
+            passageLogger.error("[WEBSITE_MODAL] Invalid URL format for preload: \(url)")
+            return
+        }
+
+        // Only allow http and https schemes
+        guard let scheme = urlObj.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
+            passageLogger.error("[WEBSITE_MODAL] Invalid URL scheme for preload. Only http and https are allowed: \(url)")
+            return
+        }
+
+        // If already preloaded with same URL, do nothing
+        if let preloadedURL = preloadedWebsiteURL, preloadedURL == url {
+            passageLogger.info("[WEBSITE_MODAL] URL already preloaded, skipping: \(url)")
+            return
+        }
+
+        // Replace existing preloaded modal if different URL
+        if preloadedWebsiteModalVC != nil {
+            passageLogger.info("[WEBSITE_MODAL] Replacing existing preloaded modal")
+            preloadedWebsiteModalVC = nil
+            preloadedWebsiteURL = nil
+        }
+
+        passageLogger.info("[WEBSITE_MODAL] Creating preloaded WebsiteModalViewController for URL: \(urlObj.absoluteString)")
+
+        // Create the website modal view controller
+        let websiteModalVC = WebsiteModalViewController(url: urlObj)
+
+        // Configure presentation style as a sheet with large detent
+        websiteModalVC.modalPresentationStyle = .pageSheet
+
+        if let sheet = websiteModalVC.sheetPresentationController {
+            sheet.detents = [.large()]
+            sheet.prefersGrabberVisible = true
+            sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+        }
+
+        // Store the preloaded modal and URL FIRST
+        preloadedWebsiteModalVC = websiteModalVC as Any
+        preloadedWebsiteURL = url
+
+        // Present off-screen to keep it alive and trigger loading
+        passageLogger.info("[WEBSITE_MODAL] 📲 Presenting modal off-screen to preload...")
+
+        // Create an invisible container to present from
+        let offscreenWindow = UIWindow(frame: CGRect(x: -10000, y: -10000, width: 1, height: 1))
+        let offscreenVC = UIViewController()
+        offscreenWindow.rootViewController = offscreenVC
+        offscreenWindow.windowLevel = .normal - 1  // Below everything
+        offscreenWindow.isHidden = false
+        offscreenWindow.alpha = 0.0  // Invisible
+
+        // Present the modal off-screen
+        offscreenVC.present(websiteModalVC, animated: false) {
+            passageLogger.info("[WEBSITE_MODAL] ✅ Website modal preloaded and presented off-screen")
+
+            // Immediately dismiss it visually but keep the VC alive
+            websiteModalVC.view.alpha = 0.0
+            websiteModalVC.view.isHidden = true
+        }
+    }
+
+    /// Present a website in a modal sheet
+    /// If the URL matches a preloaded modal, it will be shown instantly
+    /// - Parameter url: The URL string to load in the modal
+    @available(iOS 16.0, *)
+    func presentWebsiteModal(url: String) {
+        passageLogger.info("[WEBSITE_MODAL] 🎬 presentWebsiteModal called with URL: \(url)")
+        passageLogger.info("[WEBSITE_MODAL]   - Preloaded URL: \(preloadedWebsiteURL ?? "none")")
+        passageLogger.info("[WEBSITE_MODAL]   - Has preloaded VC: \(preloadedWebsiteModalVC != nil)")
+
+        // Validate URL
+        guard let urlObj = URL(string: url) else {
+            passageLogger.error("[WEBSITE_MODAL] Invalid URL format: \(url)")
+            return
+        }
+
+        // Only allow http and https schemes
+        guard let scheme = urlObj.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
+            passageLogger.error("[WEBSITE_MODAL] Invalid URL scheme. Only http and https are allowed: \(url)")
+            return
+        }
+
+        let websiteModalVC: WebsiteModalViewController
+
+        // Check if we have a preloaded modal for this URL
+        if let preloadedURL = preloadedWebsiteURL,
+           preloadedURL == url,
+           let preloadedVC = preloadedWebsiteModalVC as? WebsiteModalViewController {
+            passageLogger.info("[WEBSITE_MODAL] ♻️ Using preloaded modal for URL: \(url)")
+
+            // Dismiss from off-screen presentation first
+            if preloadedVC.presentingViewController != nil {
+                passageLogger.info("[WEBSITE_MODAL] Dismissing from off-screen presentation...")
+                preloadedVC.dismiss(animated: false) {
+                    passageLogger.info("[WEBSITE_MODAL] Off-screen dismissal complete")
+                }
+            }
+
+            // Make it visible again
+            preloadedVC.view.alpha = 1.0
+            preloadedVC.view.isHidden = false
+
+            websiteModalVC = preloadedVC
+
+            // Don't clear the preloaded modal - keep it for reuse after dismissal
+        } else {
+            passageLogger.info("[WEBSITE_MODAL] 🆕 Creating new WebsiteModalViewController for URL: \(urlObj.absoluteString)")
+
+            // Create a new website modal view controller
+            websiteModalVC = WebsiteModalViewController(url: urlObj)
+
+            // Configure presentation style as a sheet with large detent
+            websiteModalVC.modalPresentationStyle = .pageSheet
+
+            if let sheet = websiteModalVC.sheetPresentationController {
+                // Set large detent (partial height from bottom)
+                sheet.detents = [.large()]
+
+                // Allow user dismissal via swipe/tap outside
+                sheet.prefersGrabberVisible = true
+
+                // Optional: Allow scrolling to expand when content is scrolled to top
+                sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+
+                passageLogger.debug("[WEBSITE_MODAL] Sheet presentation configured with .large detent")
+            }
+        }
+
+        // Present the modal
+        present(websiteModalVC, animated: true) {
+            passageLogger.info("[WEBSITE_MODAL] Website modal presented successfully")
+        }
+    }
 }
 #endif

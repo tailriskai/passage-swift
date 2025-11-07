@@ -676,6 +676,71 @@ extension WebViewModalViewController {
                   } catch (error) {
                     window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error opening link:', error);
                   }
+                },
+
+                setRedirectOnDoneCommand: function(enabled) {
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] setRedirectOnDoneCommand called with:', enabled);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'setRedirectOnDoneCommand',
+                        enabled: enabled,
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      });
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] setRedirectOnDoneCommand request sent:', enabled);
+                    } else {
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for setRedirectOnDoneCommand');
+                    }
+                  } catch (error) {
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error setting redirectOnDoneCommand:', error);
+                  }
+                },
+
+                showBottomSheetWebsite: function(url) {
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] showBottomSheetWebsite called with:', url);
+                  try {
+                    if (!url || typeof url !== 'string') {
+                      window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Invalid URL provided to showBottomSheetWebsite');
+                      return;
+                    }
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'showBottomSheetWebsite',
+                        url: url,
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      });
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] showBottomSheetWebsite request sent for URL:', url);
+                    } else {
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for showBottomSheetWebsite');
+                    }
+                  } catch (error) {
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error showing bottom sheet website:', error);
+                  }
+                },
+
+                preloadBottomSheetWebsite: function(url) {
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] preloadBottomSheetWebsite called with:', url);
+                  try {
+                    if (!url || typeof url !== 'string') {
+                      window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Invalid URL provided to preloadBottomSheetWebsite');
+                      return;
+                    }
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'preloadBottomSheetWebsite',
+                        url: url,
+                        webViewType: 'automation',
+                        timestamp: Date.now()
+                      });
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] preloadBottomSheetWebsite request sent for URL:', url);
+                    } else {
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for preloadBottomSheetWebsite');
+                    }
+                  } catch (error) {
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error preloading bottom sheet website:', error);
+                  }
                 }
               };
 
@@ -1014,6 +1079,71 @@ extension WebViewModalViewController {
                     }
                   } catch (error) {
                     window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error disabling keyboard:', error);
+                  }
+                },
+
+                setRedirectOnDoneCommand: function(enabled) {
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] setRedirectOnDoneCommand called with:', enabled);
+                  try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'setRedirectOnDoneCommand',
+                        enabled: enabled,
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] setRedirectOnDoneCommand request sent:', enabled);
+                    } else {
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for setRedirectOnDoneCommand');
+                    }
+                  } catch (error) {
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error setting redirectOnDoneCommand:', error);
+                  }
+                },
+
+                showBottomSheetWebsite: function(url) {
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] showBottomSheetWebsite called with:', url);
+                  try {
+                    if (!url || typeof url !== 'string') {
+                      window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Invalid URL provided to showBottomSheetWebsite');
+                      return;
+                    }
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'showBottomSheetWebsite',
+                        url: url,
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] showBottomSheetWebsite request sent for URL:', url);
+                    } else {
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for showBottomSheetWebsite');
+                    }
+                  } catch (error) {
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error showing bottom sheet website:', error);
+                  }
+                },
+
+                preloadBottomSheetWebsite: function(url) {
+                  window.PASSAGE_INTERNAL_LOGGER.info('[Passage] preloadBottomSheetWebsite called with:', url);
+                  try {
+                    if (!url || typeof url !== 'string') {
+                      window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Invalid URL provided to preloadBottomSheetWebsite');
+                      return;
+                    }
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passageWebView) {
+                      window.webkit.messageHandlers.passageWebView.postMessage({
+                        type: 'preloadBottomSheetWebsite',
+                        url: url,
+                        webViewType: 'ui',
+                        timestamp: Date.now()
+                      });
+                      window.PASSAGE_INTERNAL_LOGGER.info('[Passage] preloadBottomSheetWebsite request sent for URL:', url);
+                    } else {
+                      window.PASSAGE_INTERNAL_LOGGER.warn('[Passage] Message handlers not available for preloadBottomSheetWebsite');
+                    }
+                  } catch (error) {
+                    window.PASSAGE_INTERNAL_LOGGER.error('[Passage] Error preloading bottom sheet website:', error);
                   }
                 }
               };

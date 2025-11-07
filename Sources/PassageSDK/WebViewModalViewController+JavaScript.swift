@@ -785,6 +785,39 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                         self.isKeyboardEnabled = false
                         self.view.endEditing(true)
                     }
+                case "setRedirectOnDoneCommand":
+                    if let enabled = body["enabled"] as? Bool {
+                        passageLogger.info("[REDIRECT] setRedirectOnDoneCommand called from \(webViewType) webview: \(enabled)")
+                        remoteControl?.setRedirectOnDoneCommand(enabled)
+                    } else {
+                        passageLogger.error("[REDIRECT] setRedirectOnDoneCommand missing enabled parameter")
+                    }
+                case PassageConstants.MessageTypes.showBottomSheetWebsite:
+                    if let url = body["url"] as? String {
+                        passageLogger.info("[WEBVIEW] showBottomSheetWebsite called from \(webViewType) webview with URL: \(url)")
+                        DispatchQueue.main.async {
+                            if #available(iOS 16.0, *) {
+                                self.presentWebsiteModal(url: url)
+                            } else {
+                                passageLogger.error("[WEBVIEW] showBottomSheetWebsite requires iOS 16.0 or later")
+                            }
+                        }
+                    } else {
+                        passageLogger.error("[WEBVIEW] showBottomSheetWebsite missing url parameter")
+                    }
+                case PassageConstants.MessageTypes.preloadBottomSheetWebsite:
+                    if let url = body["url"] as? String {
+                        passageLogger.info("[WEBVIEW] preloadBottomSheetWebsite called from \(webViewType) webview with URL: \(url)")
+                        DispatchQueue.main.async {
+                            if #available(iOS 16.0, *) {
+                                self.preloadWebsiteModal(url: url)
+                            } else {
+                                passageLogger.error("[WEBVIEW] preloadBottomSheetWebsite requires iOS 16.0 or later")
+                            }
+                        }
+                    } else {
+                        passageLogger.error("[WEBVIEW] preloadBottomSheetWebsite missing url parameter")
+                    }
                 case PassageConstants.MessageTypes.message:
                     if let data = body["data"] {
                         if let dataString = data as? String,

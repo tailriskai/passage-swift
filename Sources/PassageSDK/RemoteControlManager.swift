@@ -115,6 +115,9 @@ class RemoteControlManager {
     // WebView user agent detection
     private var detectedWebViewUserAgent: String?
 
+    // Redirect control for done command (can be disabled via JavaScript)
+    private var redirectOnDoneCommand: Bool = true
+
     // Screenshot accessor protocols (matching React Native)
     typealias ScreenshotAccessors = (
         getCurrentScreenshot: () -> String?,
@@ -574,6 +577,17 @@ class RemoteControlManager {
 
     func getSessionUrl() -> String {
         return config.sessionUrl
+    }
+
+    /// Set whether to redirect on done command (can be called from JavaScript via window.passage.setRedirectOnDoneCommand)
+    func setRedirectOnDoneCommand(_ enabled: Bool) {
+        passageLogger.info("[REMOTE CONTROL] setRedirectOnDoneCommand called: \(enabled)")
+        redirectOnDoneCommand = enabled
+    }
+
+    /// Get current redirect on done command setting
+    func getRedirectOnDoneCommand() -> Bool {
+        return redirectOnDoneCommand
     }
 
     private func extractCaptureScreenshotFlag(from token: String) -> Bool {
@@ -1893,14 +1907,19 @@ class RemoteControlManager {
             onSuccess?(successData)
             passageLogger.info("[COMMAND HANDLER] onSuccess callback completed")
 
-            // Navigate to success URL in UI webview
-            let successUrl = buildConnectUrl(success: true)
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(
-                    name: .navigate,
-                    object: nil,
-                    userInfo: ["url": successUrl]
-                )
+            // Navigate to success URL in UI webview (only if redirectOnDoneCommand is true)
+            if redirectOnDoneCommand {
+                passageLogger.info("[COMMAND HANDLER] Redirecting to success URL (redirectOnDoneCommand: true)")
+                let successUrl = buildConnectUrl(success: true)
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: .navigate,
+                        object: nil,
+                        userInfo: ["url": successUrl]
+                    )
+                }
+            } else {
+                passageLogger.info("[COMMAND HANDLER] Skipping redirect to success URL (redirectOnDoneCommand: false)")
             }
         } else {
             let errorMessage = (data as? [String: Any])?["error"] as? String ?? "Done command indicates failure"
@@ -1909,14 +1928,19 @@ class RemoteControlManager {
             let errorData = PassageErrorData(error: errorMessage, data: data)
             onError?(errorData)
 
-            // Navigate to error URL in UI webview
-            let errorUrl = buildConnectUrl(success: false, error: errorMessage)
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(
-                    name: .navigate,
-                    object: nil,
-                    userInfo: ["url": errorUrl]
-                )
+            // Navigate to error URL in UI webview (only if redirectOnDoneCommand is true)
+            if redirectOnDoneCommand {
+                passageLogger.info("[COMMAND HANDLER] Redirecting to error URL (redirectOnDoneCommand: true)")
+                let errorUrl = buildConnectUrl(success: false, error: errorMessage)
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: .navigate,
+                        object: nil,
+                        userInfo: ["url": errorUrl]
+                    )
+                }
+            } else {
+                passageLogger.info("[COMMAND HANDLER] Skipping redirect to error URL (redirectOnDoneCommand: false)")
             }
         }
     }

@@ -20,6 +20,8 @@ public enum PassageConstants {
         static let scriptInjection = "script_injection"
         static let switchWebview = "switchWebview"
         static let showBottomSheet = "showBottomSheet"
+        static let showBottomSheetWebsite = "showBottomSheetWebsite"
+        static let preloadBottomSheetWebsite = "preloadBottomSheetWebsite"
     }
 
     // Presentation styles
