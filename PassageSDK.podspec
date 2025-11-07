@@ -25,8 +25,8 @@ Pod::Spec.new do |spec|
   spec.source_files = "Sources/PassageSDK/**/*.{swift,h,m}"
   spec.public_header_files = "Sources/PassageSDK/include/*.h"
 
-  # Platform supportn
-  spec.ios.deployment_target = "15.1"
+  # Platform support
+  spec.ios.deployment_target = "16.0"
   
   # Dependencies
   spec.dependency "Socket.IO-Client-Swift", "~> 16.1.1"

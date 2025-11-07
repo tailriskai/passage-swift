@@ -124,7 +124,7 @@ extension WebViewModalViewController {
             }
 
             // Check for OAuth success
-            if params["code"] != nil {
+            if params.keys.contains("code") {
                 passageLogger.info("[OAUTH] OAuth authorization successful, code received")
                 // The web application should handle the code exchange
             }
@@ -491,7 +491,7 @@ extension WebViewModalViewController {
         let websiteModalVC = WebsiteModalViewController(url: urlObj)
 
         // Configure presentation style as a sheet with large detent
-        websiteModalVC.modalPresentationStyle = .pageSheet
+        websiteModalVC.modalPresentationStyle = UIModalPresentationStyle.pageSheet
 
         if let sheet = websiteModalVC.sheetPresentationController {
             sheet.detents = [UISheetPresentationController.Detent.large()]
@@ -500,7 +500,7 @@ extension WebViewModalViewController {
         }
 
         // Store the preloaded modal and URL FIRST
-        preloadedWebsiteModalVC = websiteModalVC as Any
+        preloadedWebsiteModalVC = websiteModalVC
         preloadedWebsiteURL = url
 
         // Present off-screen to keep it alive and trigger loading
@@ -576,7 +576,7 @@ extension WebViewModalViewController {
             websiteModalVC = WebsiteModalViewController(url: urlObj)
 
             // Configure presentation style as a sheet with large detent
-            websiteModalVC.modalPresentationStyle = .pageSheet
+            websiteModalVC.modalPresentationStyle = UIModalPresentationStyle.pageSheet
 
             if let sheet = websiteModalVC.sheetPresentationController {
                 // Set large detent (partial height from bottom)
