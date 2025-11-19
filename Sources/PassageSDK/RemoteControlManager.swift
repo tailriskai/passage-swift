@@ -2400,7 +2400,7 @@ class RemoteControlManager {
                         passageLogger.debug("[REMOTE CONTROL] Response: \(responseString)")
                     }
                 } else {
-                    passageLogger.info("[REMOTE CONTROL] Result sent successfully commandId: \(result.id) - Status: \(httpResponse.statusCode)")
+                    passageLogger.info("[REMOTE CONTROL] Result sent successfully commandId: \(result.id) - Status: Unknown")
                 }
             }.resume()
 
