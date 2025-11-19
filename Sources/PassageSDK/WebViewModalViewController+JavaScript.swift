@@ -16,8 +16,7 @@ extension WebViewModalViewController {
         }
 
         let commandType = notification.userInfo?["commandType"] as? String ?? "unknown"
-        passageLogger.info("[WEBVIEW] Executing \(commandType) script for command: \(commandId) (retry: \(retryCount))")
-        passageLogger.debug("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
+        passageLogger.info("[WEBVIEW] Injecting \(commandType) script (command: \(commandId), retry: \(retryCount))")
         passageLogger.debug("[WEBVIEW] Webview states - UI: \(uiWebView != nil), Automation: \(automationWebView != nil)")
 
         guard areWebViewsReady() else {
@@ -45,7 +44,7 @@ extension WebViewModalViewController {
                 guard let self = self else { return }
 
                 if self.areWebViewsReady() {
-                    passageLogger.info("[WEBVIEW] WebViews now ready, proceeding with script injection")
+                    passageLogger.debug("[WEBVIEW] WebViews now ready, proceeding with script injection")
                     self.injectScriptNotification(notification, retryCount: retryCount + 1)
                 } else {
                     self.injectScriptNotification(notification, retryCount: retryCount + 1)
@@ -131,7 +130,7 @@ extension WebViewModalViewController {
             return
         }
 
-        passageLogger.info("[WEBVIEW] Collecting page data from automation webview")
+        passageLogger.debug("[WEBVIEW] Collecting page data from automation webview")
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let automationWebView = self.automationWebView else {
@@ -150,17 +149,17 @@ extension WebViewModalViewController {
     }
 
     @objc func getCurrentUrlForBrowserStateNotification(_ notification: Notification) {
-        passageLogger.info("[WEBVIEW URL] ========== GET CURRENT URL FOR BROWSER STATE ==========")
+        passageLogger.debug("[WEBVIEW URL] ========== GET CURRENT URL FOR BROWSER STATE ==========")
 
         guard let userInfo = notification.userInfo else {
             passageLogger.error("[WEBVIEW URL] ❌ getCurrentUrlForBrowserState notification missing userInfo")
             return
         }
 
-        passageLogger.info("[WEBVIEW URL] Notification userInfo keys: \(userInfo.keys.sorted { "\($0)" < "\($1)" })")
+        passageLogger.debug("[WEBVIEW URL] Notification userInfo keys: \(userInfo.keys.sorted { "\($0)" < "\($1)" })")
 
         if let screenshot = userInfo["screenshot"] as? String {
-            passageLogger.info("[WEBVIEW URL] ✅ Screenshot data received: \(screenshot.count) chars")
+            passageLogger.debug("[WEBVIEW URL] ✅ Screenshot data received: \(screenshot.count) chars")
         } else if userInfo["screenshot"] != nil {
             passageLogger.warn("[WEBVIEW URL] ⚠️ Screenshot field present but not a String: \(type(of: userInfo["screenshot"]!))")
         } else {
@@ -199,7 +198,7 @@ extension WebViewModalViewController {
                     "imageOptimization": userInfo["imageOptimization"] ?? NSNull()
                 ]
 
-                passageLogger.info("[WEBVIEW URL] 📤 Sending fallback browser state with URL: \(self.currentURL ?? "unknown")")
+                passageLogger.debug("[WEBVIEW URL] 📤 Sending fallback browser state with URL: \(self.currentURL ?? "unknown")")
 
                 NotificationCenter.default.post(
                     name: .sendBrowserState,
@@ -223,7 +222,7 @@ extension WebViewModalViewController {
                     url = self.currentURL ?? "unknown"
                 } else if let urlResult = result as? String {
                     url = urlResult
-                    passageLogger.info("[WEBVIEW URL] ✅ Current URL from automation webview: \(passageLogger.truncateUrl(url, maxLength: 100))")
+                    passageLogger.debug("[WEBVIEW URL] ✅ Current URL from automation webview: \(passageLogger.truncateUrl(url, maxLength: 100))")
                 } else {
                     passageLogger.warn("[WEBVIEW URL] URL result was not a string, using fallback")
                     url = self.currentURL ?? "unknown"
@@ -237,9 +236,9 @@ extension WebViewModalViewController {
                     "imageOptimization": userInfo["imageOptimization"] ?? NSNull()
                 ]
 
-                passageLogger.info("[WEBVIEW URL] 📤 Sending browser state with URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+                passageLogger.debug("[WEBVIEW URL] 📤 Sending browser state with URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
                 let hasScreenshot = browserStateData["screenshot"] as? String != nil
-                passageLogger.info("[WEBVIEW URL] Browser state contains screenshot: \(hasScreenshot)")
+                passageLogger.debug("[WEBVIEW URL] Browser state contains screenshot: \(hasScreenshot)")
 
                 NotificationCenter.default.post(
                     name: .sendBrowserState,
@@ -347,7 +346,6 @@ extension WebViewModalViewController {
 
     private func sendToBackend(apiPath: String, data: Any, headers: [String: String]? = nil, completion: @escaping (Bool, String?) -> Void) {
         passageLogger.info("[SEND_TO_BACKEND] ========== SENDING DATA TO BACKEND ==========")
-        passageLogger.info("[SEND_TO_BACKEND] API Path: \(apiPath)")
 
         guard let remoteControl = remoteControl else {
             passageLogger.error("[SEND_TO_BACKEND] ❌ No remote control available")
@@ -363,8 +361,6 @@ extension WebViewModalViewController {
             completion(false, "Invalid URL")
             return
         }
-
-        passageLogger.info("[SEND_TO_BACKEND] Full URL: \(fullUrlString)")
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: data, options: []) else {
             passageLogger.error("[SEND_TO_BACKEND] ❌ Failed to serialize data to JSON")
@@ -405,10 +401,10 @@ extension WebViewModalViewController {
                 return
             }
 
-            passageLogger.info("[SEND_TO_BACKEND] Response status: \(httpResponse.statusCode)")
+            passageLogger.debug("[SEND_TO_BACKEND] Response status: \(httpResponse.statusCode)")
 
             if (200...299).contains(httpResponse.statusCode) {
-                passageLogger.info("[SEND_TO_BACKEND] ✅ Request succeeded")
+                passageLogger.debug("[SEND_TO_BACKEND] ✅ Request succeeded")
                 completion(true, nil)
             } else {
                 let errorMessage = "HTTP \(httpResponse.statusCode)"
@@ -422,8 +418,7 @@ extension WebViewModalViewController {
     }
 
     private func sendToSession(path: String, data: Any, headers: [String: String]? = nil, completion: @escaping (Bool, String?) -> Void) {
-        passageLogger.info("[SEND_TO_SESSION] ========== SENDING DATA TO SESSION ==========")
-        passageLogger.info("[SEND_TO_SESSION] Path: \(path)")
+        passageLogger.debug("[SEND_TO_SESSION] ========== SENDING DATA TO SESSION ==========")
 
         guard let remoteControl = remoteControl else {
             passageLogger.error("[SEND_TO_SESSION] ❌ No remote control available")
@@ -439,8 +434,6 @@ extension WebViewModalViewController {
             completion(false, "Invalid URL")
             return
         }
-
-        passageLogger.info("[SEND_TO_SESSION] Full URL: \(fullUrlString)")
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: data, options: []) else {
             passageLogger.error("[SEND_TO_SESSION] ❌ Failed to serialize data to JSON")
@@ -481,10 +474,10 @@ extension WebViewModalViewController {
                 return
             }
 
-            passageLogger.info("[SEND_TO_SESSION] Response status: \(httpResponse.statusCode)")
+            passageLogger.debug("[SEND_TO_SESSION] Response status: \(httpResponse.statusCode)")
 
             if (200...299).contains(httpResponse.statusCode) {
-                passageLogger.info("[SEND_TO_SESSION] ✅ Request succeeded")
+                passageLogger.debug("[SEND_TO_SESSION] ✅ Request succeeded")
                 completion(true, nil)
             } else {
                 let errorMessage = "HTTP \(httpResponse.statusCode)"
@@ -507,7 +500,7 @@ extension WebViewModalViewController {
             case "injectScript", "wait":
                 let success = data["error"] == nil
 
-                passageLogger.debug("[WEBVIEW] \(type) command result: success=\(success)")
+                passageLogger.info("[WEBVIEW] \(type) command \(commandId) result: success=\(success)")
 
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(
@@ -594,8 +587,8 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                     let points = body["points"] as? [String]
                     let closeButtonText = body["closeButtonText"] as? String
                     let showInput = body["showInput"] as? Bool ?? false
-                    passageLogger.info("[BOTTOM SHEET JS] Received showInput from JavaScript: \(showInput)")
-                    passageLogger.info("[BOTTOM SHEET JS] Full body: \(body)")
+                    passageLogger.debug("[BOTTOM SHEET JS] Received showInput from JavaScript: \(showInput)")
+                    passageLogger.debug("[BOTTOM SHEET JS] Full body: \(body)")
                     presentBottomSheet(title: title, description: description, points: points, closeButtonText: closeButtonText, showInput: showInput)
                 case PassageConstants.MessageTypes.setTitle:
                     if let title = body["title"] as? String {
@@ -666,7 +659,7 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                     }
 
                 case "sendToBackend":
-                    passageLogger.info("[WEBVIEW] sendToBackend called from \(webViewType) webview")
+                    passageLogger.debug("[WEBVIEW] sendToBackend called from \(webViewType) webview")
 
                     guard let apiPath = body["apiPath"] as? String else {
                         passageLogger.error("[WEBVIEW] sendToBackend missing apiPath parameter")
@@ -694,7 +687,7 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                     }
 
                 case "sendToSession":
-                    passageLogger.info("[WEBVIEW] sendToSession called from \(webViewType) webview")
+                    passageLogger.debug("[WEBVIEW] sendToSession called from \(webViewType) webview")
 
                     guard let path = body["path"] as? String else {
                         passageLogger.error("[WEBVIEW] sendToSession missing path parameter")
@@ -733,7 +726,7 @@ extension WebViewModalViewController: WKScriptMessageHandler {
                     changeAutomationUserAgentAndReload(userAgent)
 
                 case "openLink":
-                    passageLogger.info("[WEBVIEW] openLink called from \(webViewType) webview")
+                    passageLogger.debug("[WEBVIEW] openLink called from \(webViewType) webview")
 
                     guard let urlString = body["url"] as? String else {
                         passageLogger.error("[WEBVIEW] openLink missing url parameter")

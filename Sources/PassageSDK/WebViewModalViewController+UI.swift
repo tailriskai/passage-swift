@@ -158,25 +158,25 @@ extension WebViewModalViewController {
 
     @objc func closeButtonTapped() {
         closeButtonPressCount += 1
-        passageLogger.info("[WEBVIEW] Close button tapped (press #\(closeButtonPressCount))")
+        passageLogger.debug("[WEBVIEW] Close button tapped (press #\(closeButtonPressCount))")
 
         if closeButtonPressCount >= 2 {
-            passageLogger.info("[WEBVIEW] Second close button press - closing modal immediately")
+            passageLogger.debug("[WEBVIEW] Second close button press - closing modal immediately")
             closeModal()
             return
         }
 
-        passageLogger.info("[WEBVIEW] First close button press - requesting close confirmation")
+        passageLogger.debug("[WEBVIEW] First close button press - requesting close confirmation")
 
         wasShowingAutomationBeforeClose = !isShowingUIWebView
 
         if !isShowingUIWebView {
-            passageLogger.info("[WEBVIEW] Switching to UI webview before showing close confirmation")
+            passageLogger.debug("[WEBVIEW] Switching to UI webview before showing close confirmation")
             showUIWebView()
         }
 
         if let uiWebView = uiWebView {
-            passageLogger.info("[WEBVIEW] Sending close confirmation request to UI webview")
+            passageLogger.debug("[WEBVIEW] Sending close confirmation request to UI webview")
 
             let script = """
             try {
@@ -272,7 +272,7 @@ extension WebViewModalViewController {
                 passageLogger.warn("[WEBVIEW] WebViews not available - attempting to setup")
 
                 if self.isViewLoaded && self.view.window != nil {
-                    passageLogger.info("[WEBVIEW] View is loaded, setting up webviews")
+                    passageLogger.debug("[WEBVIEW] View is loaded, setting up webviews")
                     self.setupWebViews()
 
                     if self.uiWebView == nil || self.automationWebView == nil {
@@ -349,14 +349,14 @@ extension WebViewModalViewController {
     }
 
     @objc func showUIWebViewNotification(_ notification: Notification) {
-        passageLogger.info("[WEBVIEW] Received showUIWebView notification")
+        passageLogger.debug("[WEBVIEW] Received showUIWebView notification")
         passageLogger.debug("[WEBVIEW] Notification source: \(String(describing: Thread.callStackSymbols[0...3]))")
 
         // Check if this is a lock request from completeRecording in record mode
         if let userInfo = notification.userInfo,
            let lockUIWebView = userInfo["lockUIWebView"] as? Bool,
            lockUIWebView {
-            passageLogger.info("[WEBVIEW] Locking UI webview - will persist until modal closes")
+            passageLogger.debug("[WEBVIEW] Locking UI webview - will persist until modal closes")
             isUIWebViewLockedByRecording = true
         }
 
@@ -364,7 +364,7 @@ extension WebViewModalViewController {
     }
 
     @objc func showAutomationWebViewNotification() {
-        passageLogger.info("[WEBVIEW] Received showAutomationWebView notification")
+        passageLogger.debug("[WEBVIEW] Received showAutomationWebView notification")
         passageLogger.debug("[WEBVIEW] Notification source: \(String(describing: Thread.callStackSymbols[0...3]))")
         showAutomationWebView()
     }
@@ -380,7 +380,7 @@ extension WebViewModalViewController {
             return
         }
 
-        passageLogger.info("[KEYBOARD] Keyboard will show while UI webview is visible - dismissing immediately")
+        passageLogger.debug("[KEYBOARD] Keyboard will show while UI webview is visible - dismissing immediately")
 
         DispatchQueue.main.async { [weak self] in
             self?.view.endEditing(true)
@@ -406,17 +406,13 @@ extension WebViewModalViewController {
     }
 
     func presentBottomSheet(title: String?, description: String?, points: [String]?, closeButtonText: String?, showInput: Bool = false) {
-        passageLogger.info("[BOTTOM SHEET] Presenting bottom sheet with title: \(title ?? "nil")")
-        passageLogger.debug("[BOTTOM SHEET] Description: \(description ?? "nil")")
-        passageLogger.debug("[BOTTOM SHEET] Points count: \(points?.count ?? 0)")
-        passageLogger.debug("[BOTTOM SHEET] Close button text: \(closeButtonText ?? "nil")")
-        passageLogger.debug("[BOTTOM SHEET] Show input: \(showInput)")
+        passageLogger.debug("[BOTTOM SHEET] Presenting bottom sheet with title: \(title ?? "nil")")
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
             if let existingBottomSheet = self.presentedViewController as? BottomSheetViewController {
-                passageLogger.info("[BOTTOM SHEET] Bottom sheet already visible, updating content")
+                passageLogger.debug("[BOTTOM SHEET] Bottom sheet already visible, updating content")
                 existingBottomSheet.updateContent(
                     title: title,
                     description: description,
@@ -425,7 +421,7 @@ extension WebViewModalViewController {
                     showInput: showInput,
                     onSubmit: { [weak self] url in
                         guard let self = self else { return }
-                        passageLogger.info("[BOTTOM SHEET] Navigating to URL in automation webview: \(url)")
+                        passageLogger.debug("[BOTTOM SHEET] Navigating to URL in automation webview: \(url)")
                         self.navigateInAutomationWebView(url)
                     }
                 )
@@ -440,7 +436,7 @@ extension WebViewModalViewController {
                 showInput: showInput,
                 onSubmit: { [weak self] url in
                     guard let self = self else { return }
-                    passageLogger.info("[BOTTOM SHEET] Navigating to URL in automation webview: \(url)")
+                    passageLogger.debug("[BOTTOM SHEET] Navigating to URL in automation webview: \(url)")
                     self.navigateInAutomationWebView(url)
                 }
             )
@@ -448,7 +444,7 @@ extension WebViewModalViewController {
             // Sheet configuration is handled in BottomSheetViewController's viewDidLoad
 
             self.present(bottomSheetVC, animated: true) {
-                passageLogger.info("[BOTTOM SHEET] Bottom sheet presented successfully")
+                passageLogger.debug("[BOTTOM SHEET] Bottom sheet presented successfully")
             }
         }
     }
@@ -457,7 +453,7 @@ extension WebViewModalViewController {
     /// - Parameter url: The URL string to preload
     @available(iOS 16.0, *)
     func preloadWebsiteModal(url: String) {
-        passageLogger.info("[WEBSITE_MODAL] 🔄 preloadWebsiteModal called with URL: \(url)")
+        passageLogger.debug("[WEBSITE_MODAL] 🔄 preloadWebsiteModal called with URL: \(url)")
 
         // Validate URL
         guard let urlObj = URL(string: url) else {
@@ -474,18 +470,18 @@ extension WebViewModalViewController {
 
         // If already preloaded with same URL, do nothing
         if let preloadedURL = preloadedWebsiteURL, preloadedURL == url {
-            passageLogger.info("[WEBSITE_MODAL] URL already preloaded, skipping: \(url)")
+            passageLogger.debug("[WEBSITE_MODAL] URL already preloaded, skipping: \(url)")
             return
         }
 
         // Replace existing preloaded modal if different URL
         if preloadedWebsiteModalVC != nil {
-            passageLogger.info("[WEBSITE_MODAL] Replacing existing preloaded modal")
+            passageLogger.debug("[WEBSITE_MODAL] Replacing existing preloaded modal")
             preloadedWebsiteModalVC = nil
             preloadedWebsiteURL = nil
         }
 
-        passageLogger.info("[WEBSITE_MODAL] Creating preloaded WebsiteModalViewController for URL: \(urlObj.absoluteString)")
+        passageLogger.debug("[WEBSITE_MODAL] Creating preloaded WebsiteModalViewController for URL: \(urlObj.absoluteString)")
 
         // Create the website modal view controller with automation user agent
         let websiteModalVC = WebsiteModalViewController(url: urlObj, customUserAgent: automationUserAgent)
@@ -504,7 +500,7 @@ extension WebViewModalViewController {
         preloadedWebsiteURL = url
 
         // Present off-screen to keep it alive and trigger loading
-        passageLogger.info("[WEBSITE_MODAL] 📲 Presenting modal off-screen to preload...")
+        passageLogger.debug("[WEBSITE_MODAL] 📲 Presenting modal off-screen to preload...")
 
         // Create an invisible container to present from
         let offscreenWindow = UIWindow(frame: CGRect(x: -10000, y: -10000, width: 1, height: 1))
@@ -516,7 +512,7 @@ extension WebViewModalViewController {
 
         // Present the modal off-screen
         offscreenVC.present(websiteModalVC, animated: false) {
-            passageLogger.info("[WEBSITE_MODAL] ✅ Website modal preloaded and presented off-screen")
+            passageLogger.debug("[WEBSITE_MODAL] ✅ Website modal preloaded and presented off-screen")
 
             // Immediately dismiss it visually but keep the VC alive
             websiteModalVC.view.alpha = 0.0
@@ -529,9 +525,7 @@ extension WebViewModalViewController {
     /// - Parameter url: The URL string to load in the modal
     @available(iOS 16.0, *)
     func presentWebsiteModal(url: String) {
-        passageLogger.info("[WEBSITE_MODAL] 🎬 presentWebsiteModal called with URL: \(url)")
-        passageLogger.info("[WEBSITE_MODAL]   - Preloaded URL: \(preloadedWebsiteURL ?? "none")")
-        passageLogger.info("[WEBSITE_MODAL]   - Has preloaded VC: \(preloadedWebsiteModalVC != nil)")
+        passageLogger.debug("[WEBSITE_MODAL] 🎬 presentWebsiteModal called with URL: \(url)")
 
         // Validate URL
         guard let urlObj = URL(string: url) else {
@@ -552,13 +546,13 @@ extension WebViewModalViewController {
         if let preloadedURL = preloadedWebsiteURL,
            preloadedURL == url,
            let preloadedVC = preloadedWebsiteModalVC as? WebsiteModalViewController {
-            passageLogger.info("[WEBSITE_MODAL] ♻️ Using preloaded modal for URL: \(url)")
+            passageLogger.debug("[WEBSITE_MODAL] ♻️ Using preloaded modal for URL: \(url)")
 
             // Dismiss from off-screen presentation first
             if preloadedVC.presentingViewController != nil {
-                passageLogger.info("[WEBSITE_MODAL] Dismissing from off-screen presentation...")
+                passageLogger.debug("[WEBSITE_MODAL] Dismissing from off-screen presentation...")
                 preloadedVC.dismiss(animated: false) {
-                    passageLogger.info("[WEBSITE_MODAL] Off-screen dismissal complete")
+                    passageLogger.debug("[WEBSITE_MODAL] Off-screen dismissal complete")
                 }
             }
 
@@ -570,7 +564,7 @@ extension WebViewModalViewController {
 
             // Don't clear the preloaded modal - keep it for reuse after dismissal
         } else {
-            passageLogger.info("[WEBSITE_MODAL] 🆕 Creating new WebsiteModalViewController for URL: \(urlObj.absoluteString)")
+            passageLogger.debug("[WEBSITE_MODAL] 🆕 Creating new WebsiteModalViewController for URL: \(urlObj.absoluteString)")
 
             // Create a new website modal view controller with automation user agent
             websiteModalVC = WebsiteModalViewController(url: urlObj, customUserAgent: automationUserAgent)
@@ -594,7 +588,7 @@ extension WebViewModalViewController {
 
         // Present the modal
         present(websiteModalVC, animated: true) {
-            passageLogger.info("[WEBSITE_MODAL] Website modal presented successfully")
+            passageLogger.debug("[WEBSITE_MODAL] Website modal presented successfully")
         }
     }
 }

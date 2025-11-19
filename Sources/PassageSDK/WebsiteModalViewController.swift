@@ -98,7 +98,7 @@ struct WebsiteModalView: View {
 class WebsiteModalViewModel: ObservableObject {
     @Published var isLoading = true {
         didSet {
-            passageLogger.info("[WEBSITE_MODAL] ViewModel isLoading changed: \(oldValue) -> \(isLoading)")
+            passageLogger.debug("[WEBSITE_MODAL] ViewModel isLoading changed: \(oldValue) -> \(isLoading)")
         }
     }
     @Published var error: String?
@@ -107,7 +107,7 @@ class WebsiteModalViewModel: ObservableObject {
     weak var webView: WKWebView?
 
     init() {
-        passageLogger.info("[WEBSITE_MODAL] ViewModel initialized with isLoading = \(isLoading)")
+        passageLogger.debug("[WEBSITE_MODAL] ViewModel initialized with isLoading = \(isLoading)")
     }
 
     func goBack() {
@@ -131,15 +131,15 @@ struct WebViewRepresentable: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> WKWebView {
-        passageLogger.info("[WEBSITE_MODAL] makeUIView called for URL: \(url.absoluteString)")
-        passageLogger.info("[WEBSITE_MODAL] viewModel.webView status: \(viewModel.webView == nil ? "NIL" : "EXISTS")")
+        passageLogger.debug("[WEBSITE_MODAL] makeUIView called for URL: \(url.absoluteString)")
+        passageLogger.debug("[WEBSITE_MODAL] viewModel.webView status: \(viewModel.webView == nil ? "NIL" : "EXISTS")")
 
         // Check if we already have a webView (reusing preloaded one)
         if let existingWebView = viewModel.webView {
-            passageLogger.info("[WEBSITE_MODAL] 🔄 Reusing existing preloaded webView")
-            passageLogger.info("[WEBSITE_MODAL]   - Existing webView.url: \(existingWebView.url?.absoluteString ?? "nil")")
-            passageLogger.info("[WEBSITE_MODAL]   - Existing webView.isLoading: \(existingWebView.isLoading)")
-            passageLogger.info("[WEBSITE_MODAL]   - ViewModel.isLoading: \(viewModel.isLoading)")
+            passageLogger.debug("[WEBSITE_MODAL] Reusing preloaded webView for: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 50))")
+            passageLogger.debug("[WEBSITE_MODAL]   - Existing webView.url: \(existingWebView.url?.absoluteString ?? "nil")")
+            passageLogger.debug("[WEBSITE_MODAL]   - Existing webView.isLoading: \(existingWebView.isLoading)")
+            passageLogger.debug("[WEBSITE_MODAL]   - ViewModel.isLoading: \(viewModel.isLoading)")
 
             existingWebView.navigationDelegate = context.coordinator
 
@@ -151,13 +151,13 @@ struct WebViewRepresentable: UIViewRepresentable {
 
             // Check if we need to navigate to a different URL
             if let currentURL = existingWebView.url, currentURL.absoluteString != url.absoluteString {
-                passageLogger.info("[WEBSITE_MODAL] ⚠️ URL changed from \(currentURL.absoluteString) to \(url.absoluteString), navigating...")
+                passageLogger.info("[WEBSITE_MODAL] URL changed, navigating...")
                 viewModel.isLoading = true
                 let request = URLRequest(url: url)
                 existingWebView.load(request)
             } else {
                 // Same URL - trust the ViewModel's existing isLoading state from preload
-                passageLogger.info("[WEBSITE_MODAL] ✅ Same URL, using preloaded state (isLoading: \(viewModel.isLoading))")
+                passageLogger.debug("[WEBSITE_MODAL] ✅ Same URL, using preloaded state (isLoading: \(viewModel.isLoading))")
                 viewModel.updateCanGoBack()
             }
 
@@ -165,7 +165,7 @@ struct WebViewRepresentable: UIViewRepresentable {
         }
 
         // Create new webView
-        passageLogger.info("[WEBSITE_MODAL] 🆕 Creating new webView (no preload found)")
+        passageLogger.debug("[WEBSITE_MODAL] Creating new webView for: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 50))")
 
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
@@ -190,8 +190,6 @@ struct WebViewRepresentable: UIViewRepresentable {
         let request = URLRequest(url: url)
         webView.load(request)
 
-        passageLogger.info("[WEBSITE_MODAL] ✅ Created new webView and loading URL: \(url.absoluteString)")
-
         return webView
     }
 
@@ -207,28 +205,25 @@ struct WebViewRepresentable: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            passageLogger.info("[WEBSITE_MODAL] 📡 didStartProvisionalNavigation - Setting isLoading = true")
+            passageLogger.debug("[WEBSITE_MODAL] 📡 didStartProvisionalNavigation - Setting isLoading = true")
             parent.viewModel.isLoading = true
             parent.viewModel.error = nil
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            passageLogger.info("[WEBSITE_MODAL] ✅ didFinish - Setting isLoading = false")
-            passageLogger.info("[WEBSITE_MODAL]   - Final URL: \(webView.url?.absoluteString ?? "nil")")
+            passageLogger.debug("[WEBSITE_MODAL] Page loaded: \(passageLogger.truncateUrl(webView.url?.absoluteString ?? "", maxLength: 50))")
             parent.viewModel.isLoading = false
             parent.viewModel.updateCanGoBack()
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            passageLogger.error("[WEBSITE_MODAL] ❌ didFail - Setting isLoading = false")
-            passageLogger.error("[WEBSITE_MODAL]   - Error: \(error.localizedDescription)")
+            passageLogger.error("[WEBSITE_MODAL] Navigation failed: \(error.localizedDescription)")
             parent.viewModel.isLoading = false
             parent.viewModel.error = error.localizedDescription
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            passageLogger.error("[WEBSITE_MODAL] ❌ didFailProvisionalNavigation - Setting isLoading = false")
-            passageLogger.error("[WEBSITE_MODAL]   - Error: \(error.localizedDescription)")
+            passageLogger.error("[WEBSITE_MODAL] Provisional navigation failed: \(error.localizedDescription)")
             parent.viewModel.isLoading = false
             parent.viewModel.error = error.localizedDescription
         }
@@ -253,9 +248,9 @@ class WebsiteModalViewController: UIViewController {
         self.customUserAgent = customUserAgent
         self.viewModel = WebsiteModalViewModel()
         super.init(nibName: nil, bundle: nil)
-        passageLogger.info("[WEBSITE_MODAL] 🏗️ WebsiteModalViewController initialized for URL: \(url.absoluteString)")
+        passageLogger.debug("[WEBSITE_MODAL] WebsiteModalVC init: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 50))")
         if let ua = customUserAgent {
-            passageLogger.info("[WEBSITE_MODAL] Custom user agent provided: \(ua)")
+            passageLogger.debug("[WEBSITE_MODAL] Custom user agent provided: \(ua)")
         }
     }
 
@@ -284,7 +279,7 @@ class WebsiteModalViewController: UIViewController {
             hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
-        passageLogger.info("[WEBSITE_MODAL] View controller loaded for URL: \(url.absoluteString)")
+        passageLogger.debug("[WEBSITE_MODAL] View controller loaded")
     }
 }
 

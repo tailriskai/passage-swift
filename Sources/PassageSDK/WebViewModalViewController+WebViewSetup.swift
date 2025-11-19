@@ -5,10 +5,10 @@ import UIKit
 extension WebViewModalViewController {
 
     func createWebView(webViewType: String) -> PassageWKWebView {
-        passageLogger.info("[WEBVIEW] ========== CREATING WEBVIEW ==========")
-        passageLogger.info("[WEBVIEW] WebView type: \(webViewType)")
-        passageLogger.info("[WEBVIEW] Force simple webview: \(forceSimpleWebView)")
-        passageLogger.info("[WEBVIEW] Debug URL: \(debugSingleWebViewUrl ?? "nil")")
+        passageLogger.debug("[WEBVIEW] ========== CREATING WEBVIEW ==========")
+        passageLogger.debug("[WEBVIEW] WebView type: \(webViewType)")
+        passageLogger.debug("[WEBVIEW] Force simple webview: \(forceSimpleWebView)")
+        passageLogger.debug("[WEBVIEW] Debug URL: \(debugSingleWebViewUrl ?? "nil")")
 
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = WKWebsiteDataStore.default()
@@ -28,7 +28,7 @@ extension WebViewModalViewController {
         passageLogger.debug("[WEBVIEW] Inline media playback allowed: true")
 
         if !forceSimpleWebView && debugSingleWebViewUrl == nil {
-            passageLogger.info("[WEBVIEW] Setting up message handlers and scripts")
+            passageLogger.debug("[WEBVIEW] Setting up message handlers and scripts")
             let userContentController = WKUserContentController()
 
             userContentController.add(self, name: PassageConstants.MessageHandlers.passageWebView)
@@ -155,17 +155,17 @@ extension WebViewModalViewController {
 }
 
     func setupWebViews() {
-        passageLogger.info("[WEBVIEW] ========== SETUP WEBVIEWS ==========")
-        passageLogger.info("[WEBVIEW] Current state - UI: \(uiWebView != nil), Automation: \(automationWebView != nil)")
-        passageLogger.info("[WEBVIEW] Superviews - UI: \(uiWebView?.superview != nil), Automation: \(automationWebView?.superview != nil)")
+        passageLogger.debug("[WEBVIEW] ========== SETUP WEBVIEWS ==========")
+        passageLogger.debug("[WEBVIEW] Current state - UI: \(uiWebView != nil), Automation: \(automationWebView != nil)")
+        passageLogger.debug("[WEBVIEW] Superviews - UI: \(uiWebView?.superview != nil), Automation: \(automationWebView?.superview != nil)")
 
         if uiWebView != nil && automationWebView != nil && uiWebView.superview != nil && automationWebView.superview != nil {
-            passageLogger.info("[WEBVIEW] WebViews already created and active, skipping setup")
+            passageLogger.debug("[WEBVIEW] WebViews already created and active, skipping setup")
             return
         }
 
         if uiWebView != nil || automationWebView != nil {
-            passageLogger.info("[WEBVIEW] Cleaning up partially released WebViews before recreation")
+            passageLogger.debug("[WEBVIEW] Cleaning up partially released WebViews before recreation")
             releaseWebViews()
         }
 
@@ -299,7 +299,7 @@ extension WebViewModalViewController {
         }
 
         let globalScript = remoteControl.getGlobalJavascript()
-        passageLogger.info("[WEBVIEW] Global JavaScript retrieved: \(globalScript.isEmpty ? "EMPTY" : "\(globalScript.count) chars")")
+        passageLogger.debug("[WEBVIEW] Global JavaScript retrieved: \(globalScript.isEmpty ? "EMPTY" : "\(globalScript.count) chars")")
 
         if !globalScript.isEmpty {
             let preview = String(globalScript.prefix(200))
@@ -405,7 +405,7 @@ extension WebViewModalViewController {
         if webViewType == PassageConstants.WebViewTypes.automation {
             let globalScript = generateGlobalJavaScript()
             if globalScript.isEmpty {
-              passageLogger.info("[WEBVIEW] ℹ️ No global JavaScript to inject in automation webview (empty script)")
+              passageLogger.debug("[WEBVIEW] ℹ️ No global JavaScript to inject in automation webview (empty script)")
             }
             return """
             (function() {
@@ -1228,7 +1228,7 @@ extension WebViewModalViewController {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
-            passageLogger.info("[WEBVIEW] Changing automation user agent and reloading: \(userAgent)")
+            passageLogger.debug("[WEBVIEW] Changing automation user agent and reloading: \(userAgent)")
 
             // Store the user agent so it persists until modal/session closes
             self.automationUserAgent = userAgent.isEmpty ? nil : userAgent
@@ -1252,7 +1252,7 @@ extension WebViewModalViewController {
             if let url = URL(string: currentUrl) {
                 let request = URLRequest(url: url)
                 automationWebView.load(request)
-                passageLogger.info("[WEBVIEW] Reloading automation webview with new user agent")
+                passageLogger.debug("[WEBVIEW] Reloading automation webview with new user agent")
             } else {
                 passageLogger.error("[WEBVIEW] Failed to create URL from: \(currentUrl)")
             }
@@ -1260,9 +1260,9 @@ extension WebViewModalViewController {
     }
 
     func setAutomationUrl(_ url: String) {
-        passageLogger.info("[WEBVIEW] ========== SET AUTOMATION URL CALLED ==========")
-        passageLogger.info("[WEBVIEW] 🚀 setAutomationUrl called with: \(passageLogger.truncateUrl(url, maxLength: 100))")
-        passageLogger.info("[WEBVIEW] Thread: \(Thread.isMainThread ? "Main" : "Background")")
+        passageLogger.debug("[WEBVIEW] ========== SET AUTOMATION URL CALLED ==========")
+        passageLogger.debug("[WEBVIEW] 🚀 setAutomationUrl called with: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.debug("[WEBVIEW] Thread: \(Thread.isMainThread ? "Main" : "Background")")
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else {
@@ -1270,19 +1270,19 @@ extension WebViewModalViewController {
                 return
             }
 
-            passageLogger.info("[WEBVIEW] Now on main thread, proceeding with URL setting")
-            passageLogger.info("[WEBVIEW] Automation webview exists: \(self.automationWebView != nil)")
+            passageLogger.debug("[WEBVIEW] Now on main thread, proceeding with URL setting")
+            passageLogger.debug("[WEBVIEW] Automation webview exists: \(self.automationWebView != nil)")
 
             if self.automationWebView == nil {
                 passageLogger.error("[WEBVIEW] ❌ CRITICAL: Automation webview is NIL!")
                 passageLogger.error("[WEBVIEW] This means webviews were not set up properly")
 
                 if self.isViewLoaded && self.view.window != nil {
-                    passageLogger.info("[WEBVIEW] Attempting to setup webviews for automation URL")
+                    passageLogger.debug("[WEBVIEW] Attempting to setup webviews for automation URL")
                     self.setupWebViews()
 
                     if self.automationWebView != nil {
-                        passageLogger.info("[WEBVIEW] ✅ Webviews set up successfully, retrying URL load")
+                        passageLogger.debug("[WEBVIEW] ✅ Webviews set up successfully, retrying URL load")
                     } else {
                         passageLogger.error("[WEBVIEW] ❌ Failed to setup webviews")
                         return
@@ -1294,15 +1294,15 @@ extension WebViewModalViewController {
             }
 
             if let urlObj = URL(string: url) {
-                passageLogger.info("[WEBVIEW] ✅ URL is valid, loading in automation webview")
+                passageLogger.debug("[WEBVIEW] ✅ URL is valid, loading in automation webview")
 
                 self.intendedAutomationURL = url
-                passageLogger.info("[WEBVIEW] 📝 Stored intended automation URL from setAutomationUrl: \(url)")
+                passageLogger.debug("[WEBVIEW] 📝 Stored intended automation URL from setAutomationUrl: \(url)")
 
                 let request = URLRequest(url: urlObj)
                 self.automationWebView?.load(request)
-                passageLogger.info("[WEBVIEW] 🎯 AUTOMATION WEBVIEW LOAD REQUESTED!")
-                passageLogger.info("[WEBVIEW] This should trigger navigation and give the webview a URL")
+                passageLogger.debug("[WEBVIEW] 🎯 AUTOMATION WEBVIEW LOAD REQUESTED!")
+                passageLogger.debug("[WEBVIEW] This should trigger navigation and give the webview a URL")
             } else {
                 passageLogger.error("[WEBVIEW] ❌ Invalid URL provided: \(url)")
             }
@@ -1310,7 +1310,7 @@ extension WebViewModalViewController {
     }
 
     func updateGlobalJavaScript() {
-        passageLogger.info("[WEBVIEW] 🔄 updateGlobalJavaScript() called")
+        passageLogger.debug("[WEBVIEW] 🔄 updateGlobalJavaScript() called")
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else {
@@ -1320,11 +1320,11 @@ extension WebViewModalViewController {
 
             let newGlobalScript = self.generateGlobalJavaScript()
 
-            passageLogger.info("[WEBVIEW] Current automation webview exists: \(self.automationWebView != nil)")
-            passageLogger.info("[WEBVIEW] New global script length: \(newGlobalScript.count) chars")
+            passageLogger.debug("[WEBVIEW] Current automation webview exists: \(self.automationWebView != nil)")
+            passageLogger.debug("[WEBVIEW] New global script length: \(newGlobalScript.count) chars")
 
             if !newGlobalScript.isEmpty {
-                passageLogger.info("[WEBVIEW] 🚀 Global JavaScript updated (\(newGlobalScript.count) chars), recreating automation webview")
+                passageLogger.debug("[WEBVIEW] 🚀 Global JavaScript updated (\(newGlobalScript.count) chars), recreating automation webview")
 
                 var currentUrl: String?
                 if let automationWebView = self.automationWebView {
@@ -1335,11 +1335,11 @@ extension WebViewModalViewController {
                 self.recreateAutomationWebView()
 
                 if let url = currentUrl, !url.isEmpty {
-                    passageLogger.info("[WEBVIEW] Reloading automation webview with URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+                    passageLogger.debug("[WEBVIEW] Reloading automation webview with URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
                     self.setAutomationUrl(url)
                 }
             } else {
-                passageLogger.info("[WEBVIEW] ℹ️ No global JavaScript to update (empty script)")
+                passageLogger.debug("[WEBVIEW] ℹ️ No global JavaScript to update (empty script)")
             }
         }
     }
@@ -1372,12 +1372,12 @@ extension WebViewModalViewController {
 
         view.bringSubviewToFront(headerContainer)
 
-        passageLogger.info("[WEBVIEW] Automation webview recreated successfully")
+        passageLogger.debug("[WEBVIEW] Automation webview recreated successfully")
     }
 
     func releaseWebViews() {
-        passageLogger.info("[WEBVIEW] 🗑️ Releasing WebView instances to free JavaScriptCore memory")
-        passageLogger.info("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
+        passageLogger.debug("[WEBVIEW] 🗑️ Releasing WebView instances to free JavaScriptCore memory")
+        passageLogger.debug("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
 
         // Reset user agent when session closes
         automationUserAgent = nil
@@ -1445,7 +1445,7 @@ extension WebViewModalViewController {
         self.navigationTimeoutTimer?.invalidate()
         self.navigationTimeoutTimer = nil
 
-        passageLogger.info("[WEBVIEW] ✅ WebView instances fully released - JavaScriptCore memory should be freed")
+        passageLogger.debug("[WEBVIEW] ✅ WebView instances fully released - JavaScriptCore memory should be freed")
     }
 
     func hasActiveWebViews() -> Bool {
@@ -1459,11 +1459,11 @@ extension WebViewModalViewController {
             passageLogger.debug("[WEBVIEW] ❌ WebViews don't exist: uiWebView=\(uiWebView != nil), automationWebView=\(automationWebView != nil)")
 
             if isViewLoaded && view.window != nil {
-                passageLogger.info("[WEBVIEW] View is loaded but webviews are nil - attempting to setup webviews")
+                passageLogger.debug("[WEBVIEW] View is loaded but webviews are nil - attempting to setup webviews")
                 setupWebViews()
 
                 if let _ = self.uiWebView, let _ = self.automationWebView {
-                    passageLogger.info("[WEBVIEW] WebViews successfully created during ready check")
+                    passageLogger.debug("[WEBVIEW] WebViews successfully created during ready check")
                     return areWebViewsReady()
                 }
             }

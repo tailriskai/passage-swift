@@ -124,9 +124,9 @@ extension WebViewModalViewController {
     }
 
     func navigateInAutomationWebView(_ url: String) {
-        passageLogger.info("[WEBVIEW] ========== NAVIGATE IN AUTOMATION WEBVIEW ==========")
-        passageLogger.info("[WEBVIEW] 🧭 navigateInAutomationWebView called with: \(passageLogger.truncateUrl(url, maxLength: 100))")
-        passageLogger.info("[WEBVIEW] Thread: \(Thread.isMainThread ? "Main" : "Background")")
+        passageLogger.debug("[WEBVIEW] ========== NAVIGATE IN AUTOMATION WEBVIEW ==========")
+        passageLogger.debug("[WEBVIEW] 🧭 navigateInAutomationWebView called with: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.debug("[WEBVIEW] Thread: \(Thread.isMainThread ? "Main" : "Background")")
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else {
@@ -134,13 +134,13 @@ extension WebViewModalViewController {
                 return
             }
 
-            passageLogger.info("[WEBVIEW] Now on main thread, checking automation webview...")
-            passageLogger.info("[WEBVIEW] Automation webview exists: \(self.automationWebView != nil)")
+            passageLogger.debug("[WEBVIEW] Now on main thread, checking automation webview...")
+            passageLogger.debug("[WEBVIEW] Automation webview exists: \(self.automationWebView != nil)")
 
             guard self.automationWebView != nil else {
                 passageLogger.error("[WEBVIEW] ❌ Cannot navigate - automation webview is nil")
-                passageLogger.error("[WEBVIEW] View loaded: \(self.isViewLoaded)")
-                passageLogger.error("[WEBVIEW] View in window: \(self.view.window != nil)")
+                passageLogger.debug("[WEBVIEW] View loaded: \(self.isViewLoaded)")
+                passageLogger.debug("[WEBVIEW] View in window: \(self.view.window != nil)")
 
                 if self.isViewLoaded && self.view.window != nil {
                     passageLogger.info("[WEBVIEW] 🔧 Attempting to setup webviews before navigation")
@@ -160,12 +160,12 @@ extension WebViewModalViewController {
             }
 
             if let urlObj = URL(string: url) {
-                passageLogger.info("[WEBVIEW] ✅ URL is valid, proceeding with navigation")
-                passageLogger.info("[WEBVIEW] Automation webview current URL: \(self.automationWebView?.url?.absoluteString ?? "nil")")
-                passageLogger.info("[WEBVIEW] Automation webview is loading: \(self.automationWebView?.isLoading ?? false)")
+                passageLogger.info("[WEBVIEW] Navigating automation webview isLoading: \(self.automationWebView?.isLoading ?? false) current URL: \(self.automationWebView?.url?.absoluteString ?? "nil") new url: \(url)")
+                passageLogger.debug("[WEBVIEW] Automation webview current URL: \(self.automationWebView?.url?.absoluteString ?? "nil")")
+                passageLogger.debug("[WEBVIEW] Automation webview is loading: \(self.automationWebView?.isLoading ?? false)")
 
                 self.intendedAutomationURL = url
-                passageLogger.info("[WEBVIEW] 📝 Stored intended automation URL: \(url)")
+                passageLogger.debug("[WEBVIEW] 📝 Stored intended automation URL: \(url)")
 
                 // Log OAuth detection but keep custom user agent
                 if self.isOAuthURL(url) {
@@ -176,9 +176,9 @@ extension WebViewModalViewController {
                 let request = URLRequest(url: urlObj)
                 self.automationWebView?.load(request)
 
-                passageLogger.info("[WEBVIEW] 🎯 AUTOMATION WEBVIEW LOAD REQUESTED!")
-                passageLogger.info("[WEBVIEW] URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
-                passageLogger.info("[WEBVIEW] This should trigger WKNavigationDelegate methods")
+                passageLogger.debug("[WEBVIEW] 🎯 AUTOMATION WEBVIEW LOAD REQUESTED!")
+                passageLogger.debug("[WEBVIEW] URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+                passageLogger.debug("[WEBVIEW] This should trigger WKNavigationDelegate methods")
             } else {
                 passageLogger.error("[WEBVIEW] ❌ Invalid URL provided: \(url)")
             }
@@ -189,7 +189,7 @@ extension WebViewModalViewController {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
-            passageLogger.info("[WEBVIEW] Navigating UI webview to: \(passageLogger.truncateUrl(url, maxLength: 100))")
+            passageLogger.info("[WEBVIEW] Navigating UI webview to: \(url)")
 
             if let urlObj = URL(string: url) {
                 let request = URLRequest(url: urlObj)
@@ -233,7 +233,7 @@ extension WebViewModalViewController {
     }
 
     @objc func backButtonTapped() {
-        passageLogger.info("[WEBVIEW] Back button tapped")
+        passageLogger.debug("[WEBVIEW] Back button tapped")
 
         if isBackNavigationDisabled {
             passageLogger.debug("[WEBVIEW] Back navigation is disabled - ignoring tap")
@@ -388,7 +388,7 @@ extension WebViewModalViewController {
 
             self.url = ""
 
-            passageLogger.info("[WEBVIEW] Navigation state cleared successfully (cookies/localStorage/sessionStorage preserved)")
+            passageLogger.debug("[WEBVIEW] Navigation state cleared successfully (cookies/localStorage/sessionStorage preserved)")
         }
     }
 
@@ -455,34 +455,33 @@ extension WebViewModalViewController {
     }
 
     @objc func navigateInAutomationNotification(_ notification: Notification) {
-        passageLogger.info("[WEBVIEW] ========== NAVIGATE IN AUTOMATION NOTIFICATION ==========")
-        passageLogger.info("[WEBVIEW] 📡 Received navigateInAutomation notification")
+        passageLogger.debug("[WEBVIEW] ========== NAVIGATE IN AUTOMATION NOTIFICATION ==========")
+        passageLogger.debug("[WEBVIEW] 📡 Received navigateInAutomation notification")
 
         guard let url = notification.userInfo?["url"] as? String else {
             passageLogger.error("[WEBVIEW] ❌ Navigate notification missing URL")
-            passageLogger.error("[WEBVIEW] Available userInfo keys: \(notification.userInfo?.keys.map { "\($0)" } ?? [])")
+            passageLogger.debug("[WEBVIEW] Available userInfo keys: \(notification.userInfo?.keys.map { "\($0)" } ?? [])")
             return
         }
         let commandId = notification.userInfo?["commandId"] as? String
-        passageLogger.info("[WEBVIEW] ✅ Navigate URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
-        passageLogger.info("[WEBVIEW] Command ID: \(commandId ?? "nil")")
+        passageLogger.info("[WEBVIEW] Navigate notification - URL: \(url), CommandID: \(commandId ?? "nil")")
 
         // Check if we're already on the target URL
         let currentURL = automationWebView?.url?.absoluteString
-        passageLogger.info("[WEBVIEW] Current URL: \(currentURL ?? "nil")")
-        passageLogger.info("[WEBVIEW] Target URL: \(url)")
-        passageLogger.info("[WEBVIEW] URLs match: \(currentURL == url)")
+        passageLogger.debug("[WEBVIEW] Current URL: \(currentURL ?? "nil")")
+        passageLogger.debug("[WEBVIEW] Target URL: \(url)")
+        passageLogger.debug("[WEBVIEW] URLs match: \(currentURL == url)")
 
         if let currentURL = currentURL, currentURL == url {
             passageLogger.info("[WEBVIEW] ✅ Already on target URL, completing navigation command without navigating")
-            passageLogger.info("[WEBVIEW] Sending navigation complete notification immediately")
+            passageLogger.debug("[WEBVIEW] Sending navigation complete notification immediately")
 
             // We need to trigger the navigation completion flow without actually navigating
             // This ensures the command result is sent with proper page data
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
 
-                passageLogger.info("[WEBVIEW] Notifying RemoteControlManager of navigation completion")
+                passageLogger.debug("[WEBVIEW] Notifying RemoteControlManager of navigation completion")
 
                 // Call handleNavigationComplete to send success with page data
                 self.remoteControl?.handleNavigationComplete(url)
@@ -490,7 +489,7 @@ extension WebViewModalViewController {
                 // Also check for success URL matching
                 self.remoteControl?.checkNavigationEnd(url)
 
-                passageLogger.info("[WEBVIEW] Navigation completion handling finished for already-on-URL case")
+                passageLogger.debug("[WEBVIEW] Navigation completion handling finished for already-on-URL case")
             }
 
             return
@@ -498,7 +497,7 @@ extension WebViewModalViewController {
 
         clearAutomationNavigationHistory()
 
-        passageLogger.info("[WEBVIEW] 🚀 Calling navigateInAutomationWebView...")
+        passageLogger.debug("[WEBVIEW] 🚀 Calling navigateInAutomationWebView...")
         navigateInAutomationWebView(url)
     }
 
@@ -507,7 +506,7 @@ extension WebViewModalViewController {
             passageLogger.error("[WEBVIEW] Navigate notification missing URL")
             return
         }
-        passageLogger.info("[WEBVIEW] Received UI navigate notification: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.info("[WEBVIEW] Received UI navigate notification: \(url)")
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.navigateInUIWebView(url)
@@ -565,7 +564,7 @@ extension WebViewModalViewController: WKNavigationDelegate {
         let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
 
         if let url = webView.url {
-            passageLogger.info("[NAVIGATION] 🚀 \(webViewType) loading: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
+            passageLogger.info("[NAVIGATION] 🚀 \(webViewType) loading: \(url.absoluteString)")
 
             // Check if this is a popup webview navigating to OAuth
             if let popupWebView = webView as? PassageWKWebView,
@@ -612,7 +611,7 @@ extension WebViewModalViewController: WKNavigationDelegate {
         let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
 
         if let url = webView.url {
-            passageLogger.info("[NAVIGATION] ✅ \(webViewType) loaded: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
+            passageLogger.info("[NAVIGATION] ✅ \(webViewType) loaded: \(url.absoluteString)")
 
             if webViewType == PassageConstants.WebViewTypes.automation {
                 remoteControl?.checkNavigationEnd(url.absoluteString)
@@ -673,8 +672,8 @@ extension WebViewModalViewController: WKNavigationDelegate {
             }
 
             if intendedAutomationURL != nil {
-                passageLogger.info("[NAVIGATION] 💡 Keeping intended automation URL for script injection")
-                passageLogger.info("[NAVIGATION] Scripts will be injected even though navigation failed")
+                passageLogger.debug("[NAVIGATION] 💡 Keeping intended automation URL for script injection")
+                passageLogger.debug("[NAVIGATION] Scripts will be injected even though navigation failed")
             }
         }
 
@@ -687,7 +686,7 @@ extension WebViewModalViewController: WKNavigationDelegate {
         let webViewType = webView.tag == 2 ? PassageConstants.WebViewTypes.automation : PassageConstants.WebViewTypes.ui
 
         if let url = webView.url {
-            passageLogger.info("[NAVIGATION] 📍 \(webViewType) committed: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
+            passageLogger.debug("[NAVIGATION] 📍 \(webViewType) committed: \(passageLogger.truncateUrl(url.absoluteString, maxLength: 100))")
 
             handleNavigationStateChange(url: url.absoluteString, loading: true, webViewType: webViewType)
 
@@ -815,12 +814,12 @@ extension WebViewModalViewController {
         let url = navigationAction.request.url
         let urlString = url?.absoluteString ?? ""
 
-        passageLogger.info("[WEBVIEW] Window.open/popup request for: \(urlString.isEmpty ? "(empty - will be set via JS)" : urlString)")
+        passageLogger.debug("[WEBVIEW] Window.open/popup request for: \(urlString.isEmpty ? "(empty - will be set via JS)" : urlString)")
         passageLogger.debug("[WEBVIEW] Navigation type: \(navigationAction.navigationType.rawValue)")
 
         // Check if URL is empty or about:blank (common for JS-controlled popups)
         if urlString.isEmpty || urlString == "about:blank" {
-            passageLogger.info("[WEBVIEW] Empty URL popup - creating new webview for JS-controlled navigation")
+            passageLogger.debug("[WEBVIEW] Empty URL popup - creating new webview for JS-controlled navigation")
 
             // Create a new webview that will be navigated via JavaScript
             let popupWebView = PassageWKWebView(frame: .zero, configuration: configuration)
@@ -902,11 +901,11 @@ extension WebViewModalViewController {
                     // Track popup webview
                     self.popupWebViews.append(popupWebView)
 
-                    passageLogger.info("[WEBVIEW] Popup webview added to view hierarchy with close button")
+                    passageLogger.debug("[WEBVIEW] Popup webview added to view hierarchy with close button")
                 }
             }
 
-            passageLogger.info("[WEBVIEW] Created popup webview with OAuth-safe configuration")
+            passageLogger.debug("[WEBVIEW] Created popup webview with OAuth-safe configuration")
 
             return popupWebView
         }

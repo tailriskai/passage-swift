@@ -110,18 +110,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        passageLogger.info("[WEBVIEW] ========== VIEW DID LOAD ==========")
-        passageLogger.info("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
-        passageLogger.info("[WEBVIEW] Initial URL: \(url.isEmpty ? "empty" : passageLogger.truncateUrl(url, maxLength: 100))")
-        passageLogger.info("[WEBVIEW] Show grabber: \(showGrabber)")
-        passageLogger.info("[WEBVIEW] Title text: \(titleText)")
-        passageLogger.info("[WEBVIEW] Force simple webview: \(forceSimpleWebView)")
-        passageLogger.info("[WEBVIEW] Debug single webview URL: \(debugSingleWebViewUrl ?? "nil")")
-        passageLogger.info("[WEBVIEW] Existing webviews - UI: \(uiWebView != nil), Automation: \(automationWebView != nil)")
-
-        passageLogger.info("[WEBVIEW] View loaded: \(isViewLoaded)")
-        passageLogger.info("[WEBVIEW] View in window: \(view.window != nil)")
-        passageLogger.info("[WEBVIEW] View superview: \(view.superview != nil)")
+        passageLogger.debug("[WEBVIEW] ========== VIEW DID LOAD ==========")
 
         isModalInPresentation = true
 
@@ -134,31 +123,28 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         passageLogger.debug("[WEBVIEW] Navigation bar shown with custom header")
 
         if let debugUrl = debugSingleWebViewUrl, !debugUrl.isEmpty {
-            passageLogger.info("[WEBVIEW DEBUG MODE] Single webview mode active with URL: \(passageLogger.truncateUrl(debugUrl, maxLength: 100))")
+            passageLogger.debug("[WEBVIEW DEBUG MODE] Single webview mode active with URL: \(passageLogger.truncateUrl(debugUrl, maxLength: 100))")
             return
         }
 
         if !url.isEmpty {
-            passageLogger.info("[WEBVIEW] Loading provided URL immediately: \(passageLogger.truncateUrl(url, maxLength: 100))")
+            passageLogger.debug("[WEBVIEW] Loading provided URL immediately: \(passageLogger.truncateUrl(url, maxLength: 100))")
             loadURL(url)
         } else if let pending = initialURLToLoad {
-            passageLogger.info("[WEBVIEW] Loading pending URL: \(passageLogger.truncateUrl(pending, maxLength: 100))")
+            passageLogger.debug("[WEBVIEW] Loading pending URL: \(passageLogger.truncateUrl(pending, maxLength: 100))")
             initialURLToLoad = nil
             loadURL(pending)
         } else {
             passageLogger.warn("[WEBVIEW] No URL to load in viewDidLoad")
         }
 
-        passageLogger.info("[WEBVIEW] viewDidLoad completed")
+        passageLogger.debug("[WEBVIEW] viewDidLoad completed")
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
 
-        passageLogger.info("[WEBVIEW] ========== VIEW DID APPEAR ==========")
-        passageLogger.info("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
-        passageLogger.info("[WEBVIEW] Webview states - UI: \(uiWebView != nil), Automation: \(automationWebView != nil)")
-        passageLogger.info("[WEBVIEW] Webview superviews - UI: \(uiWebView?.superview != nil), Automation: \(automationWebView?.superview != nil)")
+        passageLogger.debug("[WEBVIEW] ========== VIEW DID APPEAR ==========")
 
         closeButtonPressCount = 0
         passageLogger.debug("[WEBVIEW] Reset close button press counter")
@@ -166,11 +152,11 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         setupNotificationObservers()
 
         if uiWebView == nil || automationWebView == nil || uiWebView?.superview == nil || automationWebView?.superview == nil {
-            passageLogger.info("[WEBVIEW] WebViews not properly set up, initializing...")
+            passageLogger.debug("[WEBVIEW] WebViews not properly set up, initializing...")
             setupWebViews()
 
             if let pendingURL = initialURLToLoad {
-                passageLogger.info("[WEBVIEW] Loading pending URL after webview setup: \(passageLogger.truncateUrl(pendingURL, maxLength: 100))")
+                passageLogger.debug("[WEBVIEW] Loading pending URL after webview setup: \(passageLogger.truncateUrl(pendingURL, maxLength: 100))")
                 initialURLToLoad = nil
                 loadURL(pendingURL)
             }
@@ -185,13 +171,13 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         }
 
         if let urlToLoad = initialURLToLoad {
-            passageLogger.info("[WEBVIEW] Loading deferred URL: \(passageLogger.truncateUrl(urlToLoad, maxLength: 100))")
+            passageLogger.debug("[WEBVIEW] Loading deferred URL: \(passageLogger.truncateUrl(urlToLoad, maxLength: 100))")
             initialURLToLoad = nil
             loadURL(urlToLoad)
         }
 
         if !isShowingUIWebView {
-            passageLogger.info("[WEBVIEW] Resetting to UI webview on reappear")
+            passageLogger.debug("[WEBVIEW] Resetting to UI webview on reappear")
             showUIWebView()
         }
     }
@@ -199,19 +185,19 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
 
-        passageLogger.info("[WEBVIEW] ========== VIEW WILL DISAPPEAR ==========")
-        passageLogger.info("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
+        passageLogger.debug("[WEBVIEW] ========== VIEW WILL DISAPPEAR ==========")
+        passageLogger.debug("[WEBVIEW] View controller instance: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
 
         navigationTimeoutTimer?.invalidate()
         navigationTimeoutTimer = nil
 
         NotificationCenter.default.removeObserver(self)
-        passageLogger.info("[WEBVIEW] Removed all notification observers")
+        passageLogger.debug("[WEBVIEW] Removed all notification observers")
     }
 
     deinit {
-        passageLogger.info("[WEBVIEW] ========== DEINIT ==========")
-        passageLogger.info("[WEBVIEW] View controller instance being deallocated: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
+        passageLogger.debug("[WEBVIEW] ========== DEINIT ==========")
+        passageLogger.debug("[WEBVIEW] View controller instance being deallocated: \(String(format: "%p", unsafeBitCast(self, to: Int.self)))")
 
         navigationTimeoutTimer?.invalidate()
         navigationTimeoutTimer = nil
@@ -220,7 +206,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
         automationWebView?.removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
 
         NotificationCenter.default.removeObserver(self)
-        passageLogger.info("[WEBVIEW] Notification observers removed")
+        passageLogger.debug("[WEBVIEW] Notification observers removed")
     }
 
     private func setupUI() {
@@ -228,7 +214,7 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     }
 
     func setupNotificationObservers() {
-        passageLogger.info("[WEBVIEW] Setting up notification observers")
+        passageLogger.debug("[WEBVIEW] Setting up notification observers")
 
         NotificationCenter.default.removeObserver(self)
 
@@ -304,14 +290,12 @@ class WebViewModalViewController: UIViewController, UIAdaptivePresentationContro
     }
 
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        passageLogger.info("[WEBVIEW] ========== PRESENTATION CONTROLLER DID DISMISS ==========")
-        passageLogger.info("[WEBVIEW] Delegate exists: \(delegate != nil)")
-        passageLogger.debug("[WEBVIEW] Delegate type: \(String(describing: delegate))")
+        passageLogger.debug("[WEBVIEW] ========== PRESENTATION CONTROLLER DID DISMISS ==========")
 
         resetURLState()
 
         if let delegate = delegate {
-            passageLogger.info("[WEBVIEW] Calling delegate.webViewModalDidClose()")
+            passageLogger.debug("[WEBVIEW] Calling delegate.webViewModalDidClose()")
             delegate.webViewModalDidClose()
         } else {
             passageLogger.error("[WEBVIEW] ❌ No delegate to call webViewModalDidClose()!")

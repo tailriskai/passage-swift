@@ -14,14 +14,14 @@ extension WebViewModalViewController {
     }
 
     func setupScreenshotAccessors() {
-        passageLogger.info("[WEBVIEW] ========== SETTING UP SCREENSHOT ACCESSORS ==========")
+        passageLogger.debug("[WEBVIEW] ========== SETTING UP SCREENSHOT ACCESSORS ==========")
 
         guard let remoteControl = remoteControl else {
             passageLogger.error("[WEBVIEW] ❌ No remote control available for screenshot setup")
             return
         }
 
-        passageLogger.info("[WEBVIEW] ✅ Remote control available, configuring screenshot accessors")
+        passageLogger.debug("[WEBVIEW] ✅ Remote control available, configuring screenshot accessors")
 
         remoteControl.setScreenshotAccessors((
             getCurrentScreenshot: { [weak self] in
@@ -57,7 +57,7 @@ extension WebViewModalViewController {
             }
         })
 
-        passageLogger.info("[WEBVIEW] ✅ Screenshot accessors configured successfully")
+        passageLogger.debug("[WEBVIEW] ✅ Screenshot accessors configured successfully")
     }
 
     func applyImageOptimization(to image: UIImage) -> OptimizedImageData? {
@@ -75,13 +75,13 @@ extension WebViewModalViewController {
 
         let originalSize = image.size
 
-        passageLogger.info("[IMAGE OPTIMIZATION] ========== APPLYING IMAGE OPTIMIZATION ==========")
-        passageLogger.info("[IMAGE OPTIMIZATION] Source: Configuration (not JWT)")
-        passageLogger.info("[IMAGE OPTIMIZATION] Config available: \(imageOptParams != nil)")
-        passageLogger.info("[IMAGE OPTIMIZATION] Original size: \(originalSize)")
-        passageLogger.info("[IMAGE OPTIMIZATION] Max dimensions: \(maxWidth)x\(maxHeight)")
-        passageLogger.info("[IMAGE OPTIMIZATION] Quality: \(quality)")
-        passageLogger.info("[IMAGE OPTIMIZATION] Format: \(format)")
+        passageLogger.debug("[IMAGE OPTIMIZATION] ========== APPLYING IMAGE OPTIMIZATION ==========")
+        passageLogger.debug("[IMAGE OPTIMIZATION] Source: Configuration (not JWT)")
+        passageLogger.debug("[IMAGE OPTIMIZATION] Config available: \(imageOptParams != nil)")
+        passageLogger.debug("[IMAGE OPTIMIZATION] Original size: \(originalSize)")
+        passageLogger.debug("[IMAGE OPTIMIZATION] Max dimensions: \(maxWidth)x\(maxHeight)")
+        passageLogger.debug("[IMAGE OPTIMIZATION] Quality: \(quality)")
+        passageLogger.debug("[IMAGE OPTIMIZATION] Format: \(format)")
 
         let aspectRatio = originalSize.width / originalSize.height
         var newWidth = originalSize.width
@@ -98,7 +98,7 @@ extension WebViewModalViewController {
         }
 
         let newSize = CGSize(width: newWidth, height: newHeight)
-        passageLogger.info("[IMAGE OPTIMIZATION] Optimized size: \(newSize)")
+        passageLogger.debug("[IMAGE OPTIMIZATION] Optimized size: \(newSize)")
 
         let resizedImage: UIImage
         if newSize != originalSize {
@@ -106,10 +106,10 @@ extension WebViewModalViewController {
             image.draw(in: CGRect(origin: .zero, size: newSize))
             resizedImage = UIGraphicsGetImageFromCurrentImageContext() ?? image
             UIGraphicsEndImageContext()
-            passageLogger.info("[IMAGE OPTIMIZATION] ✅ Image resized from \(originalSize) to \(newSize)")
+            passageLogger.debug("[IMAGE OPTIMIZATION] ✅ Image resized from \(originalSize) to \(newSize)")
         } else {
             resizedImage = image
-            passageLogger.info("[IMAGE OPTIMIZATION] ✅ No resizing needed")
+            passageLogger.debug("[IMAGE OPTIMIZATION] ✅ No resizing needed")
         }
 
         let imageData: Data?
@@ -118,11 +118,11 @@ extension WebViewModalViewController {
         if format.lowercased() == "jpeg" || format.lowercased() == "jpg" {
             imageData = resizedImage.jpegData(compressionQuality: quality)
             mimeType = "data:image/jpeg;base64,"
-            passageLogger.info("[IMAGE OPTIMIZATION] ✅ Converted to JPEG with quality \(quality)")
+            passageLogger.debug("[IMAGE OPTIMIZATION] ✅ Converted to JPEG with quality \(quality)")
         } else {
             imageData = resizedImage.pngData()
             mimeType = "data:image/png;base64,"
-            passageLogger.info("[IMAGE OPTIMIZATION] ✅ Converted to PNG (quality parameter ignored for PNG)")
+            passageLogger.debug("[IMAGE OPTIMIZATION] ✅ Converted to PNG (quality parameter ignored for PNG)")
         }
 
         guard let data = imageData else {
@@ -141,17 +141,17 @@ extension WebViewModalViewController {
             compressionQuality: quality
         )
 
-        passageLogger.info("[IMAGE OPTIMIZATION] ✅ Optimization complete:")
-        passageLogger.info("[IMAGE OPTIMIZATION]   Original: \(Int(originalSize.width))x\(Int(originalSize.height))")
-        passageLogger.info("[IMAGE OPTIMIZATION]   Optimized: \(Int(newSize.width))x\(Int(newSize.height))")
-        passageLogger.info("[IMAGE OPTIMIZATION]   Data size: \(data.count) bytes")
-        passageLogger.info("[IMAGE OPTIMIZATION]   Base64 length: \(base64String.count) chars")
+        passageLogger.debug("[IMAGE OPTIMIZATION] ✅ Optimization complete:")
+        passageLogger.debug("[IMAGE OPTIMIZATION]   Original: \(Int(originalSize.width))x\(Int(originalSize.height))")
+        passageLogger.debug("[IMAGE OPTIMIZATION]   Optimized: \(Int(newSize.width))x\(Int(newSize.height))")
+        passageLogger.debug("[IMAGE OPTIMIZATION]   Data size: \(data.count) bytes")
+        passageLogger.debug("[IMAGE OPTIMIZATION]   Base64 length: \(base64String.count) chars")
 
         return optimizedData
     }
 
     func captureScreenshot() async -> String? {
-        passageLogger.info("[WEBVIEW SCREENSHOT] ========== CAPTURING SCREENSHOT ==========")
+        passageLogger.debug("[WEBVIEW SCREENSHOT] ========== CAPTURING SCREENSHOT ==========")
 
         guard let remoteControl = remoteControl else {
             passageLogger.error("[WEBVIEW SCREENSHOT] ❌ No remote control available")
@@ -159,7 +159,7 @@ extension WebViewModalViewController {
         }
 
         let captureScreenshotFlag = remoteControl.getCaptureScreenshotFlag()
-        passageLogger.info("[WEBVIEW SCREENSHOT] Capture screenshot flag: \(captureScreenshotFlag)")
+        passageLogger.debug("[WEBVIEW SCREENSHOT] Capture screenshot flag: \(captureScreenshotFlag)")
 
         guard captureScreenshotFlag else {
             passageLogger.warn("[WEBVIEW SCREENSHOT] ⚠️ Screenshot capture skipped - captureScreenshot flag is false")
@@ -182,7 +182,7 @@ extension WebViewModalViewController {
                     return
                 }
 
-                passageLogger.info("[WEBVIEW SCREENSHOT] 📸 Capturing screenshot of automation webview")
+                passageLogger.debug("[WEBVIEW SCREENSHOT] 📸 Capturing screenshot of automation webview")
                 passageLogger.debug("[WEBVIEW SCREENSHOT] WebView bounds: \(webView.bounds)")
                 passageLogger.debug("[WEBVIEW SCREENSHOT] WebView isHidden: \(webView.isHidden)")
                 passageLogger.debug("[WEBVIEW SCREENSHOT] WebView alpha: \(webView.alpha)")
@@ -230,7 +230,7 @@ extension WebViewModalViewController {
                         return
                     }
 
-                    passageLogger.info("[WEBVIEW SCREENSHOT] ✅ WKWebView.takeSnapshot succeeded, captured image size: \(image.size)")
+                    passageLogger.debug("[WEBVIEW SCREENSHOT] ✅ WKWebView.takeSnapshot succeeded, captured image size: \(image.size)")
 
                     let optimizedImageData = self?.applyImageOptimization(to: image)
 
@@ -245,13 +245,13 @@ extension WebViewModalViewController {
                     self?.previousScreenshot = self?.currentScreenshot
                     self?.currentScreenshot = base64String
 
-                    passageLogger.info("[WEBVIEW SCREENSHOT] ✅ Screenshot captured and optimized successfully:")
-                    passageLogger.info("[WEBVIEW SCREENSHOT]   Original: \(Int(optimizedData.originalSize.width))x\(Int(optimizedData.originalSize.height))")
-                    passageLogger.info("[WEBVIEW SCREENSHOT]   Optimized: \(Int(optimizedData.optimizedSize.width))x\(Int(optimizedData.optimizedSize.height))")
-                    passageLogger.info("[WEBVIEW SCREENSHOT]   Format: \(optimizedData.format)")
-                    passageLogger.info("[WEBVIEW SCREENSHOT]   Quality: \(optimizedData.compressionQuality)")
-                    passageLogger.info("[WEBVIEW SCREENSHOT]   Final size: \(base64String.count) chars")
-                    passageLogger.info("[WEBVIEW SCREENSHOT]   Method: WKWebView.takeSnapshot (proper WebView content capture)")
+                    passageLogger.debug("[WEBVIEW SCREENSHOT] ✅ Screenshot captured and optimized successfully:")
+                    passageLogger.debug("[WEBVIEW SCREENSHOT]   Original: \(Int(optimizedData.originalSize.width))x\(Int(optimizedData.originalSize.height))")
+                    passageLogger.debug("[WEBVIEW SCREENSHOT]   Optimized: \(Int(optimizedData.optimizedSize.width))x\(Int(optimizedData.optimizedSize.height))")
+                    passageLogger.debug("[WEBVIEW SCREENSHOT]   Format: \(optimizedData.format)")
+                    passageLogger.debug("[WEBVIEW SCREENSHOT]   Quality: \(optimizedData.compressionQuality)")
+                    passageLogger.debug("[WEBVIEW SCREENSHOT]   Final size: \(base64String.count) chars")
+                    passageLogger.debug("[WEBVIEW SCREENSHOT]   Method: WKWebView.takeSnapshot (proper WebView content capture)")
 
                         continuation.resume(returning: base64String)
                     }
@@ -261,7 +261,7 @@ extension WebViewModalViewController {
     }
 
     func captureWholeUIScreenshot() async -> String? {
-        passageLogger.info("[WHOLE UI SCREENSHOT] ========== CAPTURING WHOLE UI SCREENSHOT ==========")
+        passageLogger.debug("[WHOLE UI SCREENSHOT] ========== CAPTURING WHOLE UI SCREENSHOT ==========")
 
         guard let remoteControl = remoteControl else {
             passageLogger.error("[WHOLE UI SCREENSHOT] ❌ No remote control available")
@@ -269,7 +269,7 @@ extension WebViewModalViewController {
         }
 
         let recordFlag = remoteControl.getRecordFlag()
-        passageLogger.info("[WHOLE UI SCREENSHOT] Record flag: \(recordFlag)")
+        passageLogger.debug("[WHOLE UI SCREENSHOT] Record flag: \(recordFlag)")
 
         guard recordFlag else {
             passageLogger.warn("[WHOLE UI SCREENSHOT] ⚠️ Whole UI screenshot capture skipped - record flag is false")
@@ -290,7 +290,7 @@ extension WebViewModalViewController {
                     return
                 }
 
-                passageLogger.info("[WHOLE UI SCREENSHOT] 📸 Capturing screenshot of whole UI view")
+                passageLogger.debug("[WHOLE UI SCREENSHOT] 📸 Capturing screenshot of whole UI view")
                 passageLogger.debug("[WHOLE UI SCREENSHOT] View bounds: \(view.bounds)")
                 passageLogger.debug("[WHOLE UI SCREENSHOT] View frame: \(view.frame)")
                 passageLogger.debug("[WHOLE UI SCREENSHOT] View isHidden: \(view.isHidden)")
@@ -301,7 +301,7 @@ extension WebViewModalViewController {
                     view.layer.render(in: context.cgContext)
                 }
 
-                passageLogger.info("[WHOLE UI SCREENSHOT] ✅ Whole UI screenshot captured, image size: \(image.size)")
+                passageLogger.debug("[WHOLE UI SCREENSHOT] ✅ Whole UI screenshot captured, image size: \(image.size)")
 
                 let optimizedImageData = self.applyImageOptimization(to: image)
 
@@ -316,13 +316,13 @@ extension WebViewModalViewController {
                 self.previousScreenshot = self.currentScreenshot
                 self.currentScreenshot = base64String
 
-                passageLogger.info("[WHOLE UI SCREENSHOT] ✅ Whole UI screenshot captured and optimized successfully:")
-                passageLogger.info("[WHOLE UI SCREENSHOT]   Original: \(Int(optimizedData.originalSize.width))x\(Int(optimizedData.originalSize.height))")
-                passageLogger.info("[WHOLE UI SCREENSHOT]   Optimized: \(Int(optimizedData.optimizedSize.width))x\(Int(optimizedData.optimizedSize.height))")
-                passageLogger.info("[WHOLE UI SCREENSHOT]   Format: \(optimizedData.format)")
-                passageLogger.info("[WHOLE UI SCREENSHOT]   Quality: \(optimizedData.compressionQuality)")
-                passageLogger.info("[WHOLE UI SCREENSHOT]   Final size: \(base64String.count) chars")
-                passageLogger.info("[WHOLE UI SCREENSHOT]   Method: UIGraphicsImageRenderer (captures whole UI including native elements)")
+                passageLogger.debug("[WHOLE UI SCREENSHOT] ✅ Whole UI screenshot captured and optimized successfully:")
+                passageLogger.debug("[WHOLE UI SCREENSHOT]   Original: \(Int(optimizedData.originalSize.width))x\(Int(optimizedData.originalSize.height))")
+                passageLogger.debug("[WHOLE UI SCREENSHOT]   Optimized: \(Int(optimizedData.optimizedSize.width))x\(Int(optimizedData.optimizedSize.height))")
+                passageLogger.debug("[WHOLE UI SCREENSHOT]   Format: \(optimizedData.format)")
+                passageLogger.debug("[WHOLE UI SCREENSHOT]   Quality: \(optimizedData.compressionQuality)")
+                passageLogger.debug("[WHOLE UI SCREENSHOT]   Final size: \(base64String.count) chars")
+                passageLogger.debug("[WHOLE UI SCREENSHOT]   Method: UIGraphicsImageRenderer (captures whole UI including native elements)")
 
                 continuation.resume(returning: base64String)
             }

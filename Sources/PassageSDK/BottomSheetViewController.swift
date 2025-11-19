@@ -117,8 +117,8 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
         self.onSubmit = onSubmit
         super.init(nibName: nil, bundle: nil)
 
-        passageLogger.info("[BOTTOM SHEET INIT] showInput: \(showInput)")
-        passageLogger.info("[BOTTOM SHEET INIT] closeButtonText: \(String(describing: self.closeButtonText))")
+        passageLogger.debug("[BOTTOM SHEET INIT] showInput: \(showInput)")
+        passageLogger.debug("[BOTTOM SHEET INIT] closeButtonText: \(String(describing: self.closeButtonText))")
     }
 
     required init?(coder: NSCoder) {
@@ -177,10 +177,10 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
         }
 
         if showInput {
-            passageLogger.info("[BOTTOM SHEET SETUP] Adding input field to initial setup")
+            passageLogger.debug("[BOTTOM SHEET SETUP] Adding input field to initial setup")
             contentStackView.addArrangedSubview(urlTextField)
         } else {
-            passageLogger.info("[BOTTOM SHEET SETUP] showInput is false, NOT adding input field")
+            passageLogger.debug("[BOTTOM SHEET SETUP] showInput is false, NOT adding input field")
         }
 
         var constraints = [
@@ -240,11 +240,11 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
 
     @objc private func closeButtonTapped() {
         if showInput, let url = urlTextField.text, isValidURL(url) {
-            passageLogger.info("[BOTTOM SHEET] Submit button tapped with valid URL: \(url)")
+            passageLogger.debug("[BOTTOM SHEET] Submit button tapped with valid URL: \(url)")
             onSubmit?(url)
             dismiss(animated: true, completion: nil)
         } else if !showInput {
-            passageLogger.info("[BOTTOM SHEET] Close button tapped")
+            passageLogger.debug("[BOTTOM SHEET] Close button tapped")
             dismiss(animated: true, completion: nil)
         }
     }
@@ -267,8 +267,7 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
     }
 
     func updateContent(title: String?, description: String?, points: [String]?, closeButtonText: String?, showInput: Bool = false, onSubmit: ((String) -> Void)? = nil) {
-        passageLogger.info("[BOTTOM SHEET] Updating content with new title: \(title ?? "nil")")
-        passageLogger.info("[BOTTOM SHEET] Show input: \(showInput)")
+        passageLogger.debug("[BOTTOM SHEET] Updating content with new title: \(title ?? "nil")")
 
         self.titleText = title ?? ""
         self.descriptionText = description
@@ -321,7 +320,7 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
 
             // Add input field if needed
             if self.showInput {
-                passageLogger.info("[BOTTOM SHEET] Adding input field to content stack")
+                passageLogger.debug("[BOTTOM SHEET] Adding input field to content stack")
                 self.contentStackView.addArrangedSubview(self.urlTextField)
 
                 // Reset text field
@@ -346,7 +345,7 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
 
             // Update button
             if let buttonText = self.closeButtonText, !buttonText.isEmpty {
-                passageLogger.info("[BOTTOM SHEET] Setting up button with text: \(buttonText)")
+                passageLogger.debug("[BOTTOM SHEET] Setting up button with text: \(buttonText)")
                 self.closeButton.setTitle(buttonText, for: .normal)
 
                 // Update button state for input mode
@@ -383,9 +382,9 @@ class BottomSheetViewController: UIViewController, UIAdaptivePresentationControl
                     heightConstraint.isActive = true
                 }
 
-                passageLogger.info("[BOTTOM SHEET] Button and constraints activated")
+                passageLogger.debug("[BOTTOM SHEET] Button and constraints activated")
             } else {
-                passageLogger.info("[BOTTOM SHEET] No button text, hiding button")
+                passageLogger.debug("[BOTTOM SHEET] No button text, hiding button")
                 self.closeButton.isHidden = true
 
                 // Ensure content stack goes to bottom if no button

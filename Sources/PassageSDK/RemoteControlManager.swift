@@ -210,16 +210,12 @@ class RemoteControlManager {
             return
         }
 
-        passageLogger.info("[REMOTE CONTROL] Navigation completed for command: \(command.id)")
-        passageLogger.info("[REMOTE CONTROL] Final URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.info("[REMOTE CONTROL] Navigation completed for command: \(command.id) Final URL: \(url)")
 
-        // Send success result
-        passageLogger.info("[REMOTE CONTROL] About to send success result...")
         sendSuccess(commandId: command.id, data: ["url": url])
 
         // Clear the current command
         currentCommand = nil
-        passageLogger.info("[REMOTE CONTROL] Navigation command cleared")
     }
 
     // Add method to handle navigation completion from WebView (matches React Native)
@@ -228,7 +224,7 @@ class RemoteControlManager {
 
         // Handle navigation command completion
         if let command = currentCommand, command.type == .navigate {
-            passageLogger.info("[REMOTE CONTROL] Completing navigation command: \(command.id)")
+            passageLogger.info("[REMOTE CONTROL] Completing navigation command: \(command.id) Final URL: \(url)")
             sendSuccess(commandId: command.id, data: ["url": url])
             currentCommand = nil
         }
@@ -238,7 +234,7 @@ class RemoteControlManager {
         passageLogger.debug("[REMOTE CONTROL] Record mode: \(isRecordMode), has injectScriptCommand: \(lastInjectScriptCommand != nil)")
 
         if isRecordMode, let injectScriptCommand = lastInjectScriptCommand, injectScriptCommand.type == .injectScript {
-            passageLogger.info("[REMOTE CONTROL] Re-injecting injectScript command after navigation (record mode): \(injectScriptCommand.id)")
+            passageLogger.debug("[REMOTE CONTROL] Re-injecting injectScript command after navigation (record mode): \(injectScriptCommand.id)")
 
             // Add a delay to ensure page is fully loaded before reinjecting
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -247,7 +243,7 @@ class RemoteControlManager {
         } else {
             // Fallback to wait command reinjection for backward compatibility
             if let waitCommand = lastWaitCommand {
-                passageLogger.info("[REMOTE CONTROL] Re-injecting wait command after navigation: \(waitCommand.id)")
+                passageLogger.debug("[REMOTE CONTROL] Re-injecting wait command after navigation: \(waitCommand.id)")
 
                 // Add a delay to ensure page is fully loaded before reinjecting
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -305,8 +301,6 @@ class RemoteControlManager {
     }
 
     @objc private func handleSendBrowserState(_ notification: Notification) {
-        passageLogger.info("[SEND BROWSER STATE] ========== HANDLE SEND BROWSER STATE ==========")
-
         guard let url = notification.userInfo?["url"] as? String else {
             passageLogger.error("[SEND BROWSER STATE] ❌ Browser state notification missing required URL")
             passageLogger.error("[SEND BROWSER STATE] Available userInfo keys: \(notification.userInfo?.keys.sorted { "\($0)" < "\($1)" } ?? [])")
@@ -324,12 +318,9 @@ class RemoteControlManager {
             }
         }
 
-        passageLogger.info("[SEND BROWSER STATE] URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
-        passageLogger.info("[SEND BROWSER STATE] Browser state data keys: \(browserStateData.keys.sorted())")
-
         // Log screenshot information
         if let screenshot = browserStateData["screenshot"] as? String {
-            passageLogger.info("[SEND BROWSER STATE] ✅ Screenshot included: \(screenshot.count) chars")
+            passageLogger.debug("[SEND BROWSER STATE] ✅ Screenshot included: \(screenshot.count) chars")
         } else if browserStateData["screenshot"] != nil {
             passageLogger.warn("[SEND BROWSER STATE] ⚠️ Screenshot field present but not String: \(type(of: browserStateData["screenshot"]!))")
         } else {
@@ -382,7 +373,7 @@ class RemoteControlManager {
             return
         }
 
-        passageLogger.info("[REMOTE CONTROL] Emitting appStateUpdate event - state: \(state)")
+        passageLogger.debug("[REMOTE CONTROL] Emitting appStateUpdate event - state: \(state)")
 
         let appStateData: [String: Any] = [
             "state": state,
@@ -396,8 +387,6 @@ class RemoteControlManager {
     // MARK: - Browser State Management
 
     private func sendBrowserStateToBackend(browserStateData: [String: Any]) async {
-        passageLogger.info("[BROWSER STATE] ========== SENDING BROWSER STATE TO BACKEND ==========")
-
         guard let intentToken = intentToken else {
             passageLogger.error("[BROWSER STATE] ❌ No intent token available for sending browser state")
             return
@@ -409,10 +398,9 @@ class RemoteControlManager {
             return
         }
 
-        passageLogger.info("[BROWSER STATE] URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.info("[BROWSER STATE] URL: \(url)")
 
         let urlString = "\(config.socketUrl)/automation/browser-state"
-        passageLogger.info("[BROWSER STATE] Endpoint: \(urlString)")
 
         guard let apiUrl = URL(string: urlString) else {
             passageLogger.error("[BROWSER STATE] ❌ Invalid URL: \(urlString)")
@@ -438,7 +426,6 @@ class RemoteControlManager {
         // Add screenshot if provided
         if let screenshot = browserStateData["screenshot"] as? String, !screenshot.isEmpty {
             browserState["screenshot"] = screenshot
-            passageLogger.info("[BROWSER STATE] ✅ Including screenshot in browser state (\(screenshot.count) chars)")
         } else {
             passageLogger.warn("[BROWSER STATE] ⚠️ No screenshot included in browser state")
             if let screenshot = browserStateData["screenshot"] {
@@ -463,15 +450,13 @@ class RemoteControlManager {
         }
 
         // Log final payload summary
-        passageLogger.info("[BROWSER STATE] Final payload fields: \(browserState.keys.sorted())")
         let hasScreenshot = browserState["screenshot"] != nil
-        passageLogger.info("[BROWSER STATE] Contains screenshot: \(hasScreenshot)")
 
         do {
             let jsonData = try JSONSerialization.data(withJSONObject: browserState)
             request.httpBody = jsonData
 
-            passageLogger.info("[BROWSER STATE] 🚀 Sending browser state POST request...")
+            passageLogger.debug("[BROWSER STATE] 🚀 Sending browser state POST request...")
             passageLogger.debug("[BROWSER STATE] Request size: \(jsonData.count) bytes")
 
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -538,7 +523,7 @@ class RemoteControlManager {
 
         do {
             if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                passageLogger.info("[JWT DECODE] ✅ Successfully decoded JWT payload: \(json)")
+                passageLogger.debug("[JWT DECODE] ✅ Successfully decoded JWT payload: \(json)")
                 if let record = json["record"] as? Bool {
                     passageLogger.info("[JWT DECODE] Found record flag: \(record)")
                     return record
@@ -562,7 +547,7 @@ class RemoteControlManager {
         guard let intentToken = intentToken else { return nil }
         let extractedInterval = extractCaptureScreenshotInterval(from: intentToken)
         if extractedInterval == nil {
-            passageLogger.info("[JWT DECODE] Using default captureScreenshotInterval: 5.0 seconds")
+            passageLogger.debug("[JWT DECODE] Using default captureScreenshotInterval: 5.0 seconds")
         }
         return extractedInterval ?? 5.0 // Default to 5 seconds
     }
@@ -590,7 +575,7 @@ class RemoteControlManager {
 
     /// Set whether to redirect on done command (can be called from JavaScript via window.passage.setRedirectOnDoneCommand)
     func setRedirectOnDoneCommand(_ enabled: Bool) {
-        passageLogger.info("[REMOTE CONTROL] setRedirectOnDoneCommand called: \(enabled)")
+        passageLogger.debug("[REMOTE CONTROL] setRedirectOnDoneCommand called: \(enabled)")
         redirectOnDoneCommand = enabled
     }
 
@@ -616,7 +601,7 @@ class RemoteControlManager {
         do {
             if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let captureScreenshot = json["captureScreenshot"] as? Bool {
-                    passageLogger.info("[JWT DECODE] ✅ Found captureScreenshot flag: \(captureScreenshot)")
+                    passageLogger.debug("[JWT DECODE] ✅ Found captureScreenshot flag: \(captureScreenshot)")
                     return captureScreenshot
                 } else {
                     passageLogger.warn("[JWT DECODE] No 'captureScreenshot' field found in JWT payload")
@@ -648,14 +633,14 @@ class RemoteControlManager {
             if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 // Support both number (seconds) and string formats
                 if let intervalSeconds = json["captureScreenshotInterval"] as? Double {
-                    passageLogger.info("[JWT DECODE] ✅ Found captureScreenshotInterval (Double): \(intervalSeconds)")
+                    passageLogger.debug("[JWT DECODE] ✅ Found captureScreenshotInterval (Double): \(intervalSeconds)")
                     return intervalSeconds
                 } else if let intervalInt = json["captureScreenshotInterval"] as? Int {
-                    passageLogger.info("[JWT DECODE] ✅ Found captureScreenshotInterval (Int): \(intervalInt)")
+                    passageLogger.debug("[JWT DECODE] ✅ Found captureScreenshotInterval (Int): \(intervalInt)")
                     return Double(intervalInt)
                 } else if let intervalString = json["captureScreenshotInterval"] as? String,
                           let intervalSeconds = Double(intervalString) {
-                    passageLogger.info("[JWT DECODE] ✅ Found captureScreenshotInterval (String): \(intervalString) -> \(intervalSeconds)")
+                    passageLogger.debug("[JWT DECODE] ✅ Found captureScreenshotInterval (String): \(intervalString) -> \(intervalSeconds)")
                     return intervalSeconds
                 } else {
                     passageLogger.warn("[JWT DECODE] No 'captureScreenshotInterval' field found in JWT payload - will use default 5s interval")
@@ -690,7 +675,7 @@ class RemoteControlManager {
         do {
             if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let clearAllCookies = json["clearAllCookies"] as? Bool {
-                    passageLogger.info("[JWT DECODE] ✅ Found clearAllCookies flag: \(clearAllCookies)")
+                    passageLogger.debug("[JWT DECODE] ✅ Found clearAllCookies flag: \(clearAllCookies)")
                     return clearAllCookies
                 } else {
                     passageLogger.debug("[JWT DECODE] No 'clearAllCookies' field found in JWT payload")
@@ -720,7 +705,7 @@ class RemoteControlManager {
         do {
             if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let domains = json["cookieDomains"] as? [String] {
-                    passageLogger.info("[JWT DECODE] ✅ Found cookieDomains in JWT: \(domains)")
+                    passageLogger.debug("[JWT DECODE] ✅ Found cookieDomains in JWT: \(domains)")
                     return domains
                 } else {
                     passageLogger.debug("[JWT DECODE] No 'cookieDomains' field found in JWT payload")
@@ -741,13 +726,13 @@ class RemoteControlManager {
     func getCookieDomains(from token: String) -> [String]? {
         // First check JWT
         if let jwtDomains = extractCookieDomains(from: token), !jwtDomains.isEmpty {
-            passageLogger.info("[REMOTE CONTROL] Using cookieDomains from JWT: \(jwtDomains)")
+            passageLogger.debug("[REMOTE CONTROL] Using cookieDomains from JWT: \(jwtDomains)")
             return jwtDomains
         }
 
         // Then check configuration
         if !cookieDomains.isEmpty {
-            passageLogger.info("[REMOTE CONTROL] Using cookieDomains from configuration: \(cookieDomains)")
+            passageLogger.debug("[REMOTE CONTROL] Using cookieDomains from configuration: \(cookieDomains)")
             return cookieDomains
         }
 
@@ -759,14 +744,14 @@ class RemoteControlManager {
 
     /// Start interval-based screenshot capture if JWT flags are enabled
     private func startScreenshotCapture() {
-        passageLogger.info("[SCREENSHOT TIMER] ========== STARTING SCREENSHOT CAPTURE ==========")
+        passageLogger.debug("[SCREENSHOT TIMER] ========== STARTING SCREENSHOT CAPTURE ==========")
 
         // Stop any existing timer
         stopScreenshotCapture()
 
         // Check if capture is enabled and get interval
         let captureFlag = getCaptureScreenshotFlag()
-        passageLogger.info("[SCREENSHOT TIMER] Capture screenshot flag: \(captureFlag)")
+        passageLogger.debug("[SCREENSHOT TIMER] Capture screenshot flag: \(captureFlag)")
 
         guard captureFlag else {
             passageLogger.warn("[SCREENSHOT TIMER] ❌ Screenshot capture disabled by JWT flag - no timer will be created")
@@ -774,7 +759,7 @@ class RemoteControlManager {
         }
 
         let interval = getCaptureScreenshotInterval()
-        passageLogger.info("[SCREENSHOT TIMER] Screenshot interval (JWT or default): \(interval?.description ?? "nil")")
+        passageLogger.debug("[SCREENSHOT TIMER] Screenshot interval (JWT or default): \(interval?.description ?? "nil")")
 
         guard let interval = interval, interval > 0 else {
             passageLogger.error("[SCREENSHOT TIMER] ❌ No valid screenshot interval available - no timer will be created")
@@ -782,7 +767,7 @@ class RemoteControlManager {
         }
 
         screenshotInterval = interval
-        passageLogger.info("[SCREENSHOT TIMER] ✅ Starting screenshot capture with \(interval)s interval")
+        passageLogger.debug("[SCREENSHOT TIMER] ✅ Starting screenshot capture with \(interval)s interval")
 
         // Ensure we're on the main thread for timer creation
         DispatchQueue.main.async { [weak self] in
@@ -793,7 +778,7 @@ class RemoteControlManager {
 
             // Create timer for periodic screenshots
             self.screenshotTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] timer in
-                passageLogger.info("[SCREENSHOT TIMER] 📸 Timer fired - capturing screenshot at \(Date())")
+                passageLogger.debug("[SCREENSHOT TIMER] 📸 Timer fired - capturing screenshot at \(Date())")
                 Task {
                     await self?.captureScreenshotAndSendToBrowserState()
                 }
@@ -802,10 +787,10 @@ class RemoteControlManager {
             // Add timer to run loop to ensure it fires
             if let timer = self.screenshotTimer {
                 RunLoop.main.add(timer, forMode: .common)
-                passageLogger.info("[SCREENSHOT TIMER] ✅ Screenshot timer created and added to run loop")
+                passageLogger.debug("[SCREENSHOT TIMER] ✅ Screenshot timer created and added to run loop")
 
                 // Fire immediately to test
-                passageLogger.info("[SCREENSHOT TIMER] 🔥 Firing timer immediately for testing")
+                passageLogger.debug("[SCREENSHOT TIMER] 🔥 Firing timer immediately for testing")
                 Task {
                     await self.captureScreenshotAndSendToBrowserState()
                 }
@@ -818,8 +803,8 @@ class RemoteControlManager {
     /// Stop interval-based screenshot capture
     private func stopScreenshotCapture() {
         if screenshotTimer != nil {
-            passageLogger.info("[SCREENSHOT TIMER] 🛑 Stopping screenshot capture timer")
-            passageLogger.info("[SCREENSHOT TIMER] Call stack: \(Thread.callStackSymbols.prefix(5).joined(separator: "\n"))")
+            passageLogger.debug("[SCREENSHOT TIMER] 🛑 Stopping screenshot capture timer")
+            passageLogger.debug("[SCREENSHOT TIMER] Call stack: \(Thread.callStackSymbols.prefix(5).joined(separator: "\n"))")
             screenshotTimer?.invalidate()
             screenshotTimer = nil
         } else {
@@ -837,16 +822,14 @@ class RemoteControlManager {
     /// Capture screenshot and send to browser state endpoint
     /// Uses WKWebView.takeSnapshot for proper WebView content capture
     private func captureScreenshotAndSendToBrowserState() async {
-        passageLogger.info("[SCREENSHOT CAPTURE] ========== CAPTURING SCREENSHOT FOR BROWSER STATE ==========")
-        passageLogger.info("[SCREENSHOT CAPTURE] Called from timer - timestamp: \(Date())")
-        passageLogger.info("[SCREENSHOT CAPTURE] Method: WKWebView.takeSnapshot (proper WebView content capture)")
+        passageLogger.debug("[SCREENSHOT CAPTURE] ========== CAPTURING SCREENSHOT FOR BROWSER STATE ==========")
 
         guard let intentToken = intentToken else {
             passageLogger.error("[SCREENSHOT CAPTURE] ❌ No intent token available for screenshot capture")
             return
         }
 
-        passageLogger.info("[SCREENSHOT CAPTURE] Intent token available, proceeding with capture")
+        passageLogger.debug("[SCREENSHOT CAPTURE] Intent token available, proceeding with capture")
 
         // Always capture a fresh screenshot for periodic updates (don't use cached)
         var screenshotData: String?
@@ -854,10 +837,8 @@ class RemoteControlManager {
 
         if let captureImageFunction = captureImageFunction {
             // Always capture new screenshot for timer-based captures
-            passageLogger.info("[SCREENSHOT CAPTURE] 📸 Capturing fresh screenshot using WKWebView.takeSnapshot...")
             screenshotData = await captureImageFunction()
             if let screenshot = screenshotData {
-                passageLogger.info("[SCREENSHOT CAPTURE] ✅ WKWebView.takeSnapshot captured fresh screenshot: \(screenshot.count) chars")
             } else {
                 passageLogger.error("[SCREENSHOT CAPTURE] ❌ WKWebView.takeSnapshot failed to capture screenshot")
             }
@@ -866,7 +847,7 @@ class RemoteControlManager {
             passageLogger.warn("[SCREENSHOT CAPTURE] ⚠️ No capture function available, trying cached screenshot...")
             if let currentScreenshot = screenshotAccessors?.getCurrentScreenshot() {
                 screenshotData = currentScreenshot
-                passageLogger.info("[SCREENSHOT CAPTURE] ✅ Using cached screenshot as fallback (\(currentScreenshot.count) chars)")
+                passageLogger.debug("[SCREENSHOT CAPTURE] ✅ Using cached screenshot as fallback (\(currentScreenshot.count) chars)")
             } else {
                 passageLogger.error("[SCREENSHOT CAPTURE] ❌ No screenshot capture method available")
                 passageLogger.error("[SCREENSHOT CAPTURE] screenshotAccessors: \(screenshotAccessors != nil)")
@@ -876,10 +857,7 @@ class RemoteControlManager {
 
         // Get image optimization parameters
         let imageOptParams = getImageOptimizationParameters()
-        passageLogger.info("[SCREENSHOT CAPTURE] Image optimization params: \(imageOptParams?.description ?? "nil")")
 
-        // Get current page URL from automation webview and send browser state
-        passageLogger.info("[SCREENSHOT CAPTURE] Getting current URL from automation webview...")
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             // First try to get current URL from automation webview
             DispatchQueue.main.async {
@@ -898,7 +876,6 @@ class RemoteControlManager {
             }
         }
 
-        passageLogger.info("[SCREENSHOT CAPTURE] Screenshot capture and browser state send completed")
     }
 
     // Helper method to add padding to base64 string
@@ -960,7 +937,7 @@ class RemoteControlManager {
 
     /// Trigger webview switch to UI when success URL is matched
     private func handleSuccessUrlMatch(_ url: String, navigationType: SuccessUrl.NavigationType) {
-        passageLogger.info("[SUCCESS URL] ✅ Switching to UI webview due to success URL match")
+        passageLogger.debug("[SUCCESS URL] ✅ Switching to UI webview due to success URL match")
         passageLogger.debug("[SUCCESS URL] Matched URL: \(passageLogger.truncateUrl(url, maxLength: 100)) (\(navigationType.rawValue))")
 
         DispatchQueue.main.async {
@@ -994,14 +971,14 @@ class RemoteControlManager {
     func detectWebViewUserAgent(from webView: WKWebView) {
         webView.evaluateJavaScript("navigator.userAgent") { [weak self] result, error in
             if let userAgent = result as? String, !userAgent.isEmpty {
-                passageLogger.info("[REMOTE CONTROL] Detected WebView user agent: \(userAgent)")
+                passageLogger.debug("[REMOTE CONTROL] Detected WebView user agent: \(userAgent)")
                 let previousUserAgent = self?.detectedWebViewUserAgent
                 self?.detectedWebViewUserAgent = userAgent
 
                 // If this is the first time we detected a user agent and we haven't fetched config yet,
                 // or if the user agent changed significantly, refetch configuration
                 if previousUserAgent == nil || (previousUserAgent != userAgent && !userAgent.contains("CFNetwork")) {
-                    passageLogger.info("[REMOTE CONTROL] User agent detected/updated, will use for future requests")
+                    passageLogger.debug("[REMOTE CONTROL] User agent detected/updated, will use for future requests")
                 }
             } else if let error = error {
                 passageLogger.error("[REMOTE CONTROL] Failed to detect WebView user agent: \(error)")
@@ -1021,7 +998,7 @@ class RemoteControlManager {
             return
         }
 
-        passageLogger.info("[REMOTE CONTROL] Creating temporary WebView to detect user agent")
+        passageLogger.debug("[REMOTE CONTROL] Creating temporary WebView to detect user agent")
 
         DispatchQueue.main.async { [weak self] in
             // Create a temporary WebView to detect the user agent
@@ -1046,7 +1023,7 @@ class RemoteControlManager {
                     tempWebView.removeFromSuperview()
 
                     if let userAgent = result as? String, !userAgent.isEmpty {
-                        passageLogger.info("[REMOTE CONTROL] Detected WebView user agent from temp WebView: \(userAgent)")
+                        passageLogger.debug("[REMOTE CONTROL] Detected WebView user agent from temp WebView: \(userAgent)")
                         self?.detectedWebViewUserAgent = userAgent
                     } else if let error = error {
                         passageLogger.error("[REMOTE CONTROL] Failed to detect WebView user agent from temp WebView: \(error)")
@@ -1100,34 +1077,32 @@ class RemoteControlManager {
 
         // Reset success URLs for new session
         currentSuccessUrls = []
-        passageLogger.debug("[REMOTE CONTROL] Reset success URLs for new session")
-
-        passageLogger.info("[REMOTE CONTROL] ========== STARTING CONNECTION ==========")
-        passageLogger.info("[REMOTE CONTROL] Intent token length: \(intentToken.count)")
+        passageLogger.info("[REMOTE CONTROL] Connect")
+        passageLogger.debug("[REMOTE CONTROL] ========== STARTING CONNECTION ==========")
         passageLogger.debug("[REMOTE CONTROL] Intent token preview: \(passageLogger.truncateData(intentToken, maxLength: 50))")
-        passageLogger.info("[REMOTE CONTROL] Socket URL: \(config.socketUrl)")
-        passageLogger.info("[REMOTE CONTROL] Socket Namespace: \(config.socketNamespace)")
+        passageLogger.debug("[REMOTE CONTROL] Socket URL: \(config.socketUrl)")
+        passageLogger.debug("[REMOTE CONTROL] Socket Namespace: \(config.socketNamespace)")
 
         // Debug JWT token parsing
-        passageLogger.info("[REMOTE CONTROL] ========== JWT TOKEN ANALYSIS ==========")
-        passageLogger.info("[REMOTE CONTROL] Record mode: \(getRecordFlag() ? "ENABLED (full recording mode)" : "DISABLED (no full recording)")")
-        passageLogger.info("[REMOTE CONTROL] Capture screenshot flag: \(getCaptureScreenshotFlag() ? "ENABLED (screenshots will be captured)" : "DISABLED (no screenshots)")")
+        passageLogger.debug("[REMOTE CONTROL] ========== JWT TOKEN ANALYSIS ==========")
+        passageLogger.debug("[REMOTE CONTROL] Record mode: \(getRecordFlag() ? "ENABLED (full recording mode)" : "DISABLED (no full recording)")")
+        passageLogger.debug("[REMOTE CONTROL] Capture screenshot flag: \(getCaptureScreenshotFlag() ? "ENABLED (screenshots will be captured)" : "DISABLED (no screenshots)")")
         if let interval = getCaptureScreenshotInterval() {
-            passageLogger.info("[REMOTE CONTROL] Screenshot interval: \(interval) seconds")
+            passageLogger.debug("[REMOTE CONTROL] Screenshot interval: \(interval) seconds")
         } else {
-            passageLogger.info("[REMOTE CONTROL] Screenshot interval: NOT SET")
+            passageLogger.debug("[REMOTE CONTROL] Screenshot interval: NOT SET")
         }
-        passageLogger.info("[REMOTE CONTROL] Image optimization: Will be loaded from configuration (not JWT)")
-        passageLogger.info("[REMOTE CONTROL] Page data collection: ENABLED (HTML, localStorage, sessionStorage, cookies)")
+        passageLogger.debug("[REMOTE CONTROL] Image optimization: Will be loaded from configuration (not JWT)")
+        passageLogger.debug("[REMOTE CONTROL] Page data collection: ENABLED (HTML, localStorage, sessionStorage, cookies)")
 
         // Fetch configuration first
-        passageLogger.info("[REMOTE CONTROL] Fetching configuration from server...")
+        passageLogger.debug("[REMOTE CONTROL] Fetching configuration from server...")
         passageAnalytics.trackConfigurationRequest(url: "\(config.socketUrl)\(PassageConstants.Paths.automationConfig)")
 
         // Try to detect WebView user agent first, but don't block if it fails
         detectWebViewUserAgentIfNeeded { [weak self] in
             self?.fetchConfiguration { [weak self] in
-                passageLogger.info("[REMOTE CONTROL] Configuration fetch completed, proceeding to socket connection")
+                passageLogger.debug("[REMOTE CONTROL] Configuration fetch completed, proceeding to socket connection")
                 self?.connectSocket()
 
                 // Start screenshot capture if enabled
@@ -1144,7 +1119,6 @@ class RemoteControlManager {
         }
 
         let urlString = "\(config.socketUrl)\(PassageConstants.Paths.automationConfig)"
-        passageLogger.info("[REMOTE CONTROL] Fetching config from: \(urlString)")
 
         let url = URL(string: urlString)!
         var request = URLRequest(url: url)
@@ -1154,7 +1128,7 @@ class RemoteControlManager {
         // This allows the backend to distinguish between URLSession user agent and WebView user agent
         if let webViewUserAgent = detectedWebViewUserAgent {
             request.setValue(webViewUserAgent, forHTTPHeaderField: "x-webview-user-agent")
-            passageLogger.info("[REMOTE CONTROL] Sending detected WebView user agent in custom header")
+            passageLogger.debug("[REMOTE CONTROL] Sending detected WebView user agent in custom header")
         } else {
             passageLogger.warn("[REMOTE CONTROL] No WebView user agent detected, backend will use default")
         }
@@ -1169,7 +1143,7 @@ class RemoteControlManager {
             }
 
             if let httpResponse = response as? HTTPURLResponse {
-                passageLogger.info("[REMOTE CONTROL] Configuration response status: \(httpResponse.statusCode)")
+                passageLogger.debug("[REMOTE CONTROL] Configuration response status: \(httpResponse.statusCode)")
                 if httpResponse.statusCode != 200 {
                     passageLogger.warn("[REMOTE CONTROL] Non-200 status code received")
                     passageAnalytics.trackConfigurationError(error: "Status code: \(httpResponse.statusCode)", url: urlString)
@@ -1177,7 +1151,7 @@ class RemoteControlManager {
             }
 
             if let data = data {
-                passageLogger.info("[REMOTE CONTROL] Configuration data received: \(data.count) bytes")
+                passageLogger.debug("[REMOTE CONTROL] Configuration data received: \(data.count) bytes")
                 if let jsonString = String(data: data, encoding: .utf8) {
                     passageLogger.debug("[REMOTE CONTROL] Raw response: \(passageLogger.truncateData(jsonString, maxLength: 500))")
                 }
@@ -1185,19 +1159,19 @@ class RemoteControlManager {
                 do {
                     if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                         // ADD COMPREHENSIVE CONFIGURATION LOGGING
-                        passageLogger.info("[REMOTE CONTROL] ========== FULL CONFIGURATION RESPONSE ==========")
-                        passageLogger.info("[REMOTE CONTROL] Configuration keys: \(json.keys.sorted())")
+                        passageLogger.debug("[REMOTE CONTROL] ========== FULL CONFIGURATION RESPONSE ==========")
+                        passageLogger.debug("[REMOTE CONTROL] Configuration keys: \(json.keys.sorted())")
 
                         // Log integration data specifically
                         if let integration = json["integration"] as? [String: Any] {
-                            passageLogger.info("[REMOTE CONTROL] ✅ Integration data found: \(integration)")
+                            passageLogger.debug("[REMOTE CONTROL] ✅ Integration data found: \(integration)")
                             let integrationUrl = integration["url"] as? String
                             let integrationName = integration["name"] as? String
                             let integrationSlug = integration["slug"] as? String
-                            passageLogger.info("[REMOTE CONTROL] Integration details:")
-                            passageLogger.info("[REMOTE CONTROL]   - Name: \(integrationName ?? "nil")")
-                            passageLogger.info("[REMOTE CONTROL]   - Slug: \(integrationSlug ?? "nil")")
-                            passageLogger.info("[REMOTE CONTROL]   - URL: \(integrationUrl ?? "NIL - THIS IS THE PROBLEM!")")
+                            passageLogger.debug("[REMOTE CONTROL] Integration details:")
+                            passageLogger.debug("[REMOTE CONTROL]   - Name: \(integrationName ?? "nil")")
+                            passageLogger.debug("[REMOTE CONTROL]   - Slug: \(integrationSlug ?? "nil")")
+                            passageLogger.debug("[REMOTE CONTROL]   - URL: \(integrationUrl ?? "NIL - THIS IS THE PROBLEM!")")
                         } else {
                             passageLogger.error("[REMOTE CONTROL] ❌ NO INTEGRATION FIELD IN CONFIGURATION!")
                             passageLogger.error("[REMOTE CONTROL] This means the backend is not returning integration data")
@@ -1218,7 +1192,7 @@ class RemoteControlManager {
 
                             self.globalJavascript = newGlobalJavascript
 
-                            passageLogger.info("[REMOTE CONTROL] 📝 Global JavaScript updated: \(oldLength) chars -> \(newLength) chars")
+                            passageLogger.debug("[REMOTE CONTROL] 📝 Global JavaScript updated: \(oldLength) chars -> \(newLength) chars")
 
                             if !newGlobalJavascript.isEmpty {
                                 let preview = String(newGlobalJavascript.prefix(150))
@@ -1226,16 +1200,16 @@ class RemoteControlManager {
 
                                 // Check if it contains common libraries
                                 if newGlobalJavascript.contains("Sentry") {
-                                    passageLogger.info("[REMOTE CONTROL] 🔍 Detected Sentry in global JavaScript")
+                                    passageLogger.debug("[REMOTE CONTROL] 🔍 Detected Sentry in global JavaScript")
                                 }
                                 if newGlobalJavascript.contains("WeakMap") {
                                     passageLogger.warn("[REMOTE CONTROL] ⚠️ WeakMap detected in global JavaScript - potential compatibility issue")
                                 }
                                 if newGlobalJavascript.contains("NetworkInterceptor") {
-                                    passageLogger.info("[REMOTE CONTROL] 🌐 Detected NetworkInterceptor in global JavaScript")
+                                    passageLogger.debug("[REMOTE CONTROL] 🌐 Detected NetworkInterceptor in global JavaScript")
                                 }
                             } else {
-                                passageLogger.info("[REMOTE CONTROL] ℹ️ Global JavaScript is empty")
+                                passageLogger.debug("[REMOTE CONTROL] ℹ️ Global JavaScript is empty")
                             }
                         }
 
@@ -1246,22 +1220,22 @@ class RemoteControlManager {
                         let extractedIntegrationUrl = (json["integration"] as? [String: Any])?["url"] as? String
                         self?.integrationUrl = extractedIntegrationUrl
 
-                        passageLogger.info("[REMOTE CONTROL] ========== INTEGRATION URL EXTRACTION ==========")
-                        passageLogger.info("[REMOTE CONTROL] Extracted integration URL: \(extractedIntegrationUrl ?? "NIL")")
-                        passageLogger.info("[REMOTE CONTROL] Stored in self.integrationUrl: \(self?.integrationUrl ?? "NIL")")
+                        passageLogger.debug("[REMOTE CONTROL] ========== INTEGRATION URL EXTRACTION ==========")
+                        passageLogger.debug("[REMOTE CONTROL] Extracted integration URL: \(extractedIntegrationUrl ?? "NIL")")
+                        passageLogger.debug("[REMOTE CONTROL] Stored in self.integrationUrl: \(self?.integrationUrl ?? "NIL")")
 
                         if extractedIntegrationUrl == nil {
                             passageLogger.error("[REMOTE CONTROL] ❌ CRITICAL: No integration URL found!")
                             passageLogger.error("[REMOTE CONTROL] This means automation webview will never load")
                             passageLogger.error("[REMOTE CONTROL] Backend must provide integration.url in configuration")
                         } else {
-                            passageLogger.info("[REMOTE CONTROL] ✅ Integration URL successfully extracted")
+                            passageLogger.debug("[REMOTE CONTROL] ✅ Integration URL successfully extracted")
                         }
 
                         // Extract imageOptimization parameters from configuration
                         self?.configImageOptimization = json["imageOptimization"] as? [String: Any]
 
-                        passageLogger.info("[REMOTE CONTROL] Configuration parsed successfully")
+                        passageLogger.debug("[REMOTE CONTROL] Configuration loaded. Domains: \(self?.cookieDomains.count ?? 0), JS: \(self?.globalJavascript.count ?? 0) chars")
                         passageLogger.debug("[REMOTE CONTROL] Cookie domains: \(self?.cookieDomains ?? [])")
                         passageLogger.debug("[REMOTE CONTROL] Global JS length: \(self?.globalJavascript.count ?? 0)")
                         let userAgentInfo: String
@@ -1273,23 +1247,23 @@ class RemoteControlManager {
                         }
                         passageLogger.debug("[REMOTE CONTROL] Automation user agent: \(userAgentInfo)")
                         passageLogger.debug("[REMOTE CONTROL] Integration URL: \(self?.integrationUrl ?? "none")")
-                        passageLogger.info("[REMOTE CONTROL] Cookie domains configured: \(self?.cookieDomains.count ?? 0) domains")
-                        passageLogger.info("[REMOTE CONTROL] Image optimization from config: \(self?.configImageOptimization != nil ? "✅ SET" : "❌ NOT SET")")
+                        passageLogger.debug("[REMOTE CONTROL] Cookie domains configured: \(self?.cookieDomains.count ?? 0) domains")
+                        passageLogger.debug("[REMOTE CONTROL] Image optimization from config: \(self?.configImageOptimization != nil ? "✅ SET" : "❌ NOT SET")")
                         if let imageOpt = self?.configImageOptimization {
                             passageLogger.debug("[REMOTE CONTROL] Config image optimization: \(imageOpt)")
                         }
 
                         // Notify about configuration update (matches React Native implementation)
                         if let self = self, let callback = self.onConfigurationUpdated {
-                            passageLogger.info("[REMOTE CONTROL] ========== CALLING CONFIGURATION CALLBACK ==========")
-                            passageLogger.info("[REMOTE CONTROL] 📞 Calling onConfigurationUpdated callback")
-                            passageLogger.info("[REMOTE CONTROL] Callback exists: true")
-                            passageLogger.info("[REMOTE CONTROL] Will pass userAgent: '\(self.automationUserAgent)'")
-                            passageLogger.info("[REMOTE CONTROL] Will pass integrationUrl: '\(self.integrationUrl ?? "NIL")'")
+                            passageLogger.debug("[REMOTE CONTROL] ========== CALLING CONFIGURATION CALLBACK ==========")
+                            passageLogger.debug("[REMOTE CONTROL] 📞 Calling onConfigurationUpdated callback")
+                            passageLogger.debug("[REMOTE CONTROL] Callback exists: true")
+                            passageLogger.debug("[REMOTE CONTROL] Will pass userAgent: '\(self.automationUserAgent)'")
+                            passageLogger.debug("[REMOTE CONTROL] Will pass integrationUrl: '\(self.integrationUrl ?? "NIL")'")
 
                             callback(self.automationUserAgent, self.integrationUrl)
 
-                            passageLogger.info("[REMOTE CONTROL] ✅ Configuration callback completed")
+                            passageLogger.debug("[REMOTE CONTROL] ✅ Configuration callback completed")
                         } else {
                             passageLogger.error("[REMOTE CONTROL] ❌ Configuration callback NOT called!")
                             passageLogger.error("[REMOTE CONTROL] self: \(self != nil)")
@@ -1315,15 +1289,12 @@ class RemoteControlManager {
     private func connectSocket() {
         let socketURL = URL(string: config.socketUrl)!
 
-        passageLogger.info("[REMOTE CONTROL] ========== SOCKET CONNECTION STARTING ==========")
-        passageLogger.info("[REMOTE CONTROL] Socket URL: \(socketURL.absoluteString)")
-        passageLogger.info("[REMOTE CONTROL] Namespace: \(config.socketNamespace)")
-        passageLogger.info("[REMOTE CONTROL] Intent token available: \(intentToken != nil)")
+        passageLogger.info("[REMOTE CONTROL] CONNECTION STARTING Socket URL: \(socketURL.absoluteString), namespace: \(config.socketNamespace), intent token: \(intentToken)")
         passageAnalytics.trackRemoteControlConnectStart(socketUrl: socketURL.absoluteString, namespace: config.socketNamespace)
 
         // Determine if we should use secure connection based on URL scheme
         let isSecure = socketURL.scheme?.lowercased() == "https"
-        passageLogger.info("[REMOTE CONTROL] Using secure connection: \(isSecure) (scheme: \(socketURL.scheme ?? "nil"))")
+        passageLogger.debug("[REMOTE CONTROL] Using secure connection: \(isSecure) (scheme: \(socketURL.scheme ?? "nil"))")
 
         let socketConfig: SocketIOClientConfiguration = [
             .log(config.debug),  // Use unified debug flag from PassageConfig
@@ -1354,10 +1325,6 @@ class RemoteControlManager {
 
         // Use 'ws' namespace as expected by the server
         socket = manager?.socket(forNamespace: "/ws")
-        passageLogger.info("[REMOTE CONTROL] Using namespace: /ws with path: /socket.io/")
-
-        passageLogger.info("[REMOTE CONTROL] Socket manager created: \(manager != nil)")
-        passageLogger.info("[REMOTE CONTROL] Socket instance created: \(socket != nil)")
 
         if socket == nil {
             passageLogger.error("[REMOTE CONTROL] ❌ CRITICAL: Failed to create socket instance")
@@ -1366,15 +1333,15 @@ class RemoteControlManager {
             return
         }
 
-        passageLogger.info("[REMOTE CONTROL] Setting up socket event handlers...")
+        passageLogger.debug("[REMOTE CONTROL] Setting up socket event handlers...")
         setupSocketHandlers()
 
-        passageLogger.info("[REMOTE CONTROL] Initiating socket connection...")
+        passageLogger.debug("[REMOTE CONTROL] Initiating socket connection...")
         passageLogger.debug("[REMOTE CONTROL] Token for connection: \(passageLogger.truncateData(intentToken ?? "nil", maxLength: 50))")
 
         // Log initial socket state
         if let status = socket?.status {
-            passageLogger.info("[REMOTE CONTROL] Initial socket status: \(status)")
+            passageLogger.debug("[REMOTE CONTROL] Initial socket status: \(status)")
         }
 
         socket?.connect()
@@ -1394,36 +1361,29 @@ class RemoteControlManager {
     }
 
     private func setupSocketHandlers() {
-        passageLogger.info("[SOCKET HANDLERS] Setting up all socket event handlers")
+        passageLogger.debug("[SOCKET HANDLERS] Setting up all socket event handlers")
 
         socket?.on(clientEvent: .connect) { [weak self] data, ack in
-            passageLogger.info("[SOCKET EVENT] ✅ CONNECTED to server")
-            passageLogger.debug("[SOCKET EVENT] Connect data: \(data)")
-            passageLogger.debug("[SOCKET EVENT] Connect ack: \(String(describing: ack))")
+            passageLogger.info("[SOCKET EVENT] ✅ CONNECTED to server, connection ID: \(data)")
             self?.isConnected = true
 
             // Log socket details after connection
             if let socket = self?.socket {
-                passageLogger.info("[SOCKET INFO] Socket ID: \(socket.sid ?? "no-sid")")
-                passageLogger.info("[SOCKET INFO] Status: \(socket.status)")
-                passageLogger.info("[SOCKET INFO] Manager status: \(socket.manager?.status ?? .notConnected)")
+                passageLogger.debug("[SOCKET INFO] Socket ID: \(socket.sid ?? "no-sid")")
+                passageLogger.debug("[SOCKET INFO] Status: \(socket.status)")
+                passageLogger.debug("[SOCKET INFO] Manager status: \(socket.manager?.status ?? .notConnected)")
                 passageAnalytics.trackRemoteControlConnectSuccess(socketId: socket.sid)
             }
         }
 
         socket?.on(clientEvent: .error) { [weak self] data, ack in
-            passageLogger.error("[SOCKET EVENT] ❌ ERROR occurred")
-            passageLogger.error("[SOCKET EVENT] Error data: \(data)")
+            passageLogger.error("[SOCKET EVENT] ❌ ERROR occurred: \(data)")
             passageAnalytics.trackRemoteControlConnectError(error: String(describing: data), attempt: 1)
 
             // Try to parse error details
             if let errorArray = data.first as? [Any], !errorArray.isEmpty {
                 for (index, item) in errorArray.enumerated() {
-                    passageLogger.error("[SOCKET EVENT] Error item \(index): \(item)")
-                }
-            } else if !data.isEmpty {
-                for (index, item) in data.enumerated() {
-                    passageLogger.error("[SOCKET EVENT] Error item \(index): \(item)")
+                    passageLogger.debug("[SOCKET EVENT] Error item \(index): \(item)")
                 }
             }
 
@@ -1434,8 +1394,7 @@ class RemoteControlManager {
         }
 
         socket?.on(clientEvent: .disconnect) { [weak self] data, ack in
-            passageLogger.warn("[SOCKET EVENT] 🔌 DISCONNECTED from server")
-            passageLogger.warn("[SOCKET EVENT] Disconnect reason: \(data)")
+            passageLogger.warn("[SOCKET EVENT] 🔌 DISCONNECTED from server: \(data)")
             self?.isConnected = false
             passageAnalytics.trackRemoteControlDisconnect(reason: "\(data)")
 
@@ -1447,17 +1406,16 @@ class RemoteControlManager {
 
         socket?.on(clientEvent: .reconnect) { [weak self] data, ack in
             passageLogger.info("[SOCKET EVENT] 🔄 RECONNECTED successfully")
-            passageLogger.info("[SOCKET EVENT] Reconnected after \(data) attempts")
+            passageLogger.debug("[SOCKET EVENT] Reconnected after \(data) attempts")
             self?.isConnected = true
         }
 
         socket?.on(clientEvent: .reconnectAttempt) { data, ack in
-            passageLogger.warn("[SOCKET EVENT] 🔄 RECONNECT ATTEMPT #\(data)")
+            passageLogger.debug("[SOCKET EVENT] 🔄 RECONNECT ATTEMPT #\(data)")
         }
 
         socket?.on(clientEvent: .statusChange) { data, ack in
-            passageLogger.info("[SOCKET EVENT] 📊 STATUS CHANGED")
-            passageLogger.info("[SOCKET EVENT] New status: \(data)")
+            passageLogger.info("[SOCKET EVENT] 📊 STATUS CHANGED: \(data)")
         }
 
         socket?.on(clientEvent: .ping) { data, ack in
@@ -1470,7 +1428,7 @@ class RemoteControlManager {
 
         // Add websocket specific error handlers
         socket?.on(clientEvent: .websocketUpgrade) { data, ack in
-            passageLogger.info("[SOCKET EVENT] 🔄 WebSocket upgrade: \(data)")
+            passageLogger.debug("[SOCKET EVENT] 🔄 WebSocket upgrade: \(data)")
         }
 
         socket?.onAny { event in
@@ -1479,48 +1437,39 @@ class RemoteControlManager {
 
         // Custom events
         socket?.on("command") { [weak self] data, ack in
-            passageLogger.info("[SOCKET EVENT] ========== COMMAND RECEIVED ==========")
-            passageLogger.info("[SOCKET EVENT] 📨 COMMAND received")
-            passageLogger.debug("[SOCKET EVENT] Raw command data: \(data)")
-
             guard let commandData = data.first as? [String: Any] else {
                 passageLogger.error("[SOCKET EVENT] ❌ Invalid command data format")
-                passageLogger.error("[SOCKET EVENT] Expected dictionary, got: \(type(of: data.first))")
                 return
             }
 
             // Log command type immediately to track what we're receiving
             let commandType = commandData["type"] as? String ?? "unknown"
             let commandId = commandData["id"] as? String ?? "no-id"
-            passageLogger.info("[SOCKET EVENT] ✅ Command type: \(commandType)")
-            passageLogger.info("[SOCKET EVENT] Command ID: \(commandId)")
+
+            passageLogger.info("[SOCKET EVENT] Command received - Type: \(commandType), ID: \(commandId)")
 
             if commandType == "navigate" {
-                passageLogger.info("[SOCKET EVENT] 🧭 NAVIGATE COMMAND DETECTED!")
                 if let args = commandData["args"] as? [String: Any],
                    let url = args["url"] as? String {
-                    passageLogger.info("[SOCKET EVENT] Navigate URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+                    passageLogger.debug("[SOCKET EVENT] Navigate URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
                 } else {
                     passageLogger.error("[SOCKET EVENT] ❌ Navigate command missing URL in args")
                 }
             } else if commandType == "wait" {
-                passageLogger.info("[SOCKET EVENT] ⏳ WAIT COMMAND DETECTED")
-            } else {
-                passageLogger.info("[SOCKET EVENT] 📝 OTHER COMMAND: \(commandType)")
+                passageLogger.debug("[SOCKET EVENT] ⏳ WAIT COMMAND DETECTED")
             }
 
-            passageLogger.info("[SOCKET EVENT] Processing command...")
+            passageLogger.debug("[SOCKET EVENT] Processing command...")
             self?.handleCommand(commandData)
         }
 
         socket?.on("welcome") { data, ack in
-            passageLogger.info("[SOCKET EVENT] 👋 WELCOME message received")
+            passageLogger.info("[SOCKET EVENT] 👋 WELCOME message received, data: \(data)")
             passageLogger.debug("[SOCKET EVENT] Welcome data: \(data)")
         }
 
         socket?.on("error") { data, ack in
-            passageLogger.error("[SOCKET EVENT] Server error event received")
-            passageLogger.error("[SOCKET EVENT] Server error data: \(data)")
+            passageLogger.error("[SOCKET EVENT] Server error event received: \(data)")
         }
 
         // Handle DATA_COMPLETE events (like React Native SDK)
@@ -1535,14 +1484,14 @@ class RemoteControlManager {
 
                 // Only call onDataComplete when data is available or partially available
                 if status == "data_available" || status == "data_partially_available" {
-                    passageLogger.info("[SOCKET EVENT] Status allows onDataComplete - calling callback")
+                    passageLogger.debug("[SOCKET EVENT] Status allows onDataComplete - calling callback")
                     let dataResult = PassageDataResult(
                         data: eventData["data"],
                         prompts: eventData["prompts"] as? [[String: Any]]
                     )
                     self?.onDataComplete?(dataResult)
                 } else {
-                    passageLogger.info("[SOCKET EVENT] Status '\(status ?? "nil")' does not allow onDataComplete - skipping callback")
+                    passageLogger.debug("[SOCKET EVENT] Status '\(status ?? "nil")' does not allow onDataComplete - skipping callback")
                 }
             }
         }
@@ -1584,8 +1533,7 @@ class RemoteControlManager {
 
         // Handle CONNECTION_ERROR events from socket
         socket?.on("CONNECTION_ERROR") { [weak self] data, ack in
-            passageLogger.error("[SOCKET EVENT] ❌ CONNECTION_ERROR event received")
-            passageLogger.error("[SOCKET EVENT] Connection error data: \(data)")
+            passageLogger.error("[SOCKET EVENT] ❌ CONNECTION_ERROR event received: \(data)")
 
             if let eventData = data.first as? [String: Any] {
                 let error = eventData["error"] as? String ?? "Unknown error"
@@ -1606,19 +1554,19 @@ class RemoteControlManager {
 
             // Check for userActionRequired flag
             if let userActionRequired = connectionData["userActionRequired"] as? Bool {
-                passageLogger.info("[SOCKET EVENT] Connection userActionRequired: \(userActionRequired)")
+                passageLogger.debug("[SOCKET EVENT] Connection userActionRequired: \(userActionRequired)")
                 self?.handleUserActionRequiredChange(userActionRequired)
             }
 
             // Log other connection info
             if let status = connectionData["status"] as? String {
-                passageLogger.info("[SOCKET EVENT] Connection status: \(status)")
+                passageLogger.debug("[SOCKET EVENT] Connection status: \(status)")
             }
             if let statusMessage = connectionData["statusMessage"] as? String {
-                passageLogger.info("[SOCKET EVENT] Status message: \(statusMessage)")
+                passageLogger.debug("[SOCKET EVENT] Status message: \(statusMessage)")
             }
             if let progress = connectionData["progress"] as? Int {
-                passageLogger.info("[SOCKET EVENT] Progress: \(progress)%")
+                passageLogger.debug("[SOCKET EVENT] Progress: \(progress)%")
             }
 
             // Store data when status is "connected" and progress is 100, and data is present
@@ -1634,16 +1582,16 @@ class RemoteControlManager {
                let actualData = connectionData["data"] as? [[String: Any]],
                !actualData.isEmpty {
 
-                passageLogger.info("[SOCKET EVENT] ✅ Data collection complete - storing data for success callback")
-                passageLogger.info("[SOCKET EVENT] Found data array with \(actualData.count) items")
+                passageLogger.debug("[SOCKET EVENT] ✅ Data collection complete - storing data for success callback")
+                passageLogger.debug("[SOCKET EVENT] Found data array with \(actualData.count) items")
 
                 // Store the data and connection ID for when the success callback is triggered
                 self?.connectionData = actualData
                 self?.connectionId = connectionData["id"] as? String
 
-                passageLogger.info("[SOCKET EVENT] Data stored successfully:")
-                passageLogger.info("[SOCKET EVENT]   - Stored \(actualData.count) data items")
-                passageLogger.info("[SOCKET EVENT]   - Connection ID: \(connectionData["id"] as? String ?? "nil")")
+                passageLogger.debug("[SOCKET EVENT] Data stored successfully:")
+                passageLogger.debug("[SOCKET EVENT]   - Stored \(actualData.count) data items")
+                passageLogger.debug("[SOCKET EVENT]   - Connection ID: \(connectionData["id"] as? String ?? "nil")")
 
                 // Trigger onDataComplete callback when data is available
                 passageLogger.info("[SOCKET EVENT] Triggering onDataComplete callback with available data")
@@ -1659,13 +1607,11 @@ class RemoteControlManager {
         }
 
         // Log all handlers that were set up
-        passageLogger.info("[SOCKET HANDLERS] All event handlers configured successfully")
+        passageLogger.debug("[SOCKET HANDLERS] All event handlers configured successfully")
     }
 
     private func handleUserActionRequiredChange(_ userActionRequired: Bool) {
-        passageLogger.info("[WEBVIEW SWITCH] ========== USER ACTION REQUIRED CHANGE ==========")
         passageLogger.info("[WEBVIEW SWITCH] New userActionRequired: \(userActionRequired)")
-        passageLogger.info("[WEBVIEW SWITCH] Current webview type: \(currentWebViewType)")
 
         // 🔑 RECORD MODE: Check if UI webview is locked by completeRecording
         let isRecordMode = getRecordFlag()
@@ -1673,19 +1619,19 @@ class RemoteControlManager {
             // Check if UI webview is locked by completeRecording
             let isUILocked = viewController?.isUIWebViewLockedByRecording ?? false
             if isUILocked {
-                passageLogger.info("[WEBVIEW SWITCH] Record mode: UI webview is locked by completeRecording - skipping automatic switch")
+                passageLogger.debug("[WEBVIEW SWITCH] Record mode: UI webview is locked by completeRecording - skipping automatic switch")
                 return
             }
 
-            passageLogger.info("[WEBVIEW SWITCH] Record mode enabled - showing automation webview")
+            passageLogger.debug("[WEBVIEW SWITCH] Record mode enabled - showing automation webview")
             if currentWebViewType != PassageConstants.WebViewTypes.automation {
-                passageLogger.info("[WEBVIEW SWITCH] Switching to AUTOMATION webview (record mode)")
+                passageLogger.debug("[WEBVIEW SWITCH] Switching to AUTOMATION webview (record mode)")
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: .showAutomationWebView, object: nil)
                 }
                 currentWebViewType = PassageConstants.WebViewTypes.automation
             } else {
-                passageLogger.info("[WEBVIEW SWITCH] Already showing automation webview")
+                passageLogger.debug("[WEBVIEW SWITCH] Already showing automation webview")
             }
             return
         }
@@ -1699,25 +1645,25 @@ class RemoteControlManager {
                 }
                 currentWebViewType = PassageConstants.WebViewTypes.automation
             } else {
-                passageLogger.info("[WEBVIEW SWITCH] Already showing automation webview")
+                passageLogger.debug("[WEBVIEW SWITCH] Already showing automation webview")
             }
         } else {
             // No user interaction needed - show UI webview, automation runs in background
             if currentWebViewType != PassageConstants.WebViewTypes.ui {
-                passageLogger.info("[WEBVIEW SWITCH] Switching to UI webview (background automation)")
+                passageLogger.debug("[WEBVIEW SWITCH] Switching to UI webview (background automation)")
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: .showUIWebView, object: nil)
                 }
                 currentWebViewType = PassageConstants.WebViewTypes.ui
             } else {
-                passageLogger.info("[WEBVIEW SWITCH] Keeping UI webview visible (automation runs in background)")
+                passageLogger.debug("[WEBVIEW SWITCH] Keeping UI webview visible (automation runs in background)")
             }
         }
     }
 
     private func handleCommand(_ commandData: [String: Any]) {
-        passageLogger.info("[COMMAND HANDLER] ========== PROCESSING COMMAND ==========")
-        passageLogger.info("[COMMAND HANDLER] Raw command data: \(commandData)")
+        passageLogger.debug("[COMMAND HANDLER] ========== PROCESSING COMMAND ==========")
+        passageLogger.debug("[COMMAND HANDLER] Raw command data: \(commandData)")
 
         guard let id = commandData["id"] as? String else {
             passageLogger.error("[COMMAND HANDLER] ❌ Missing command ID")
@@ -1739,8 +1685,7 @@ class RemoteControlManager {
             return
         }
 
-        passageLogger.info("[COMMAND HANDLER] Command ID: \(id)")
-        passageLogger.info("[COMMAND HANDLER] Command type: \(type.rawValue)")
+        passageLogger.info("[COMMAND HANDLER] Executing command: \(type.rawValue) (ID: \(id))")
 
         let command = RemoteCommand(
             id: id,
@@ -1788,26 +1733,24 @@ class RemoteControlManager {
         currentCommand = command
 
         // Execute command
-        passageLogger.info("[COMMAND HANDLER] ========== EXECUTING COMMAND ==========")
-        passageLogger.info("[COMMAND HANDLER] Command type: \(command.type.rawValue)")
-        passageLogger.info("[COMMAND HANDLER] Command ID: \(command.id)")
+        passageLogger.debug("[COMMAND HANDLER] ========== EXECUTING COMMAND ==========")
+        passageLogger.debug("[COMMAND HANDLER] Command type: \(command.type.rawValue)")
+        passageLogger.debug("[COMMAND HANDLER] Command ID: \(command.id)")
 
         switch command.type {
         case .navigate:
-            passageLogger.info("[COMMAND HANDLER] 🧭 Executing NAVIGATE command")
+            passageLogger.debug("[COMMAND HANDLER] 🧭 Executing NAVIGATE command")
             handleNavigate(command)
         case .click, .input, .wait, .injectScript:
-            passageLogger.info("[COMMAND HANDLER] 📝 Executing SCRIPT command (\(command.type.rawValue))")
+            passageLogger.debug("[COMMAND HANDLER] 📝 Executing SCRIPT command (\(command.type.rawValue))")
             handleScriptExecution(command)
         case .done:
-            passageLogger.info("[COMMAND HANDLER] ✅ Executing DONE command")
+            passageLogger.debug("[COMMAND HANDLER] ✅ Executing DONE command")
             handleDone(command)
         }
     }
 
     private func handleNavigate(_ command: RemoteCommand) {
-        passageLogger.info("[COMMAND HANDLER] ========== NAVIGATE COMMAND RECEIVED ==========")
-        passageLogger.info("[COMMAND HANDLER] 🧭 Processing navigate command: \(command.id)")
 
         guard let url = command.args?["url"] as? String else {
             passageLogger.error("[COMMAND HANDLER] ❌ No URL provided in navigate command!")
@@ -1815,7 +1758,7 @@ class RemoteControlManager {
             return
         }
 
-        passageLogger.info("[COMMAND HANDLER] ✅ Navigate URL: \(passageLogger.truncateUrl(url, maxLength: 100))")
+        passageLogger.info("[COMMAND HANDLER] command: \(command.id) Navigate requested to: \(url)")
 
         // Parse and store successUrls (override any existing ones)
         if let successUrlsData = command.args?["successUrls"] as? [[String: Any]] {
@@ -1827,7 +1770,7 @@ class RemoteControlManager {
                 return SuccessUrl(urlPattern: urlPattern, navigationType: navigationType)
             }
 
-            passageLogger.info("[COMMAND HANDLER] Stored \(currentSuccessUrls.count) success URLs:")
+            passageLogger.debug("[COMMAND HANDLER] Stored \(currentSuccessUrls.count) success URLs:")
             for successUrl in currentSuccessUrls {
                 passageLogger.debug("[COMMAND HANDLER]   - \(successUrl.navigationType): \(passageLogger.truncateUrl(successUrl.urlPattern, maxLength: 100))")
             }
@@ -1837,18 +1780,18 @@ class RemoteControlManager {
             passageLogger.debug("[COMMAND HANDLER] No success URLs provided, cleared existing ones")
         }
 
-        passageLogger.info("[COMMAND HANDLER] 🚀 SENDING NAVIGATE NOTIFICATION")
-        passageLogger.info("[COMMAND HANDLER] This should trigger automation webview navigation")
+        passageLogger.debug("[COMMAND HANDLER] 🚀 SENDING NAVIGATE NOTIFICATION")
+        passageLogger.debug("[COMMAND HANDLER] This should trigger automation webview navigation")
         passageAnalytics.trackCommandReceived(commandId: command.id, commandType: command.type.rawValue, userActionRequired: command.userActionRequired ?? false)
 
         DispatchQueue.main.async {
-            passageLogger.info("[COMMAND HANDLER] 📡 Posting navigateInAutomation notification")
+            passageLogger.debug("[COMMAND HANDLER] 📡 Posting navigateInAutomation notification")
             NotificationCenter.default.post(
                 name: .navigateInAutomation,
                 object: nil,
                 userInfo: ["url": url, "commandId": command.id]
             )
-            passageLogger.info("[COMMAND HANDLER] ✅ Navigate notification posted successfully")
+            passageLogger.debug("[COMMAND HANDLER] ✅ Navigate notification posted successfully")
         }
     }
 
@@ -1858,7 +1801,7 @@ class RemoteControlManager {
             return
         }
 
-        passageLogger.info("[COMMAND HANDLER] Executing \(command.type.rawValue) script for command: \(command.id)")
+        passageLogger.info("[COMMAND HANDLER] Executing script: \(command.type.rawValue) (ID: \(command.id))")
         passageLogger.debug("[COMMAND HANDLER] Script length: \(script.count) characters")
         passageAnalytics.trackCommandReceived(commandId: command.id, commandType: command.type.rawValue, userActionRequired: command.userActionRequired ?? false)
 
@@ -1875,11 +1818,11 @@ class RemoteControlManager {
         let success = command.args?["success"] as? Bool ?? true
         let data = command.args?["data"]
 
-        passageLogger.info("[COMMAND HANDLER] Handling done command - success: \(success)")
+        passageLogger.info("[COMMAND HANDLER] Done command received - Success: \(success), command ID: \(command.id)")
 
         // Always switch to UI webview for final result display
         if currentWebViewType != PassageConstants.WebViewTypes.ui {
-            passageLogger.info("[COMMAND HANDLER] Switching to UI webview for final result")
+            passageLogger.debug("[COMMAND HANDLER] Switching to UI webview for final result")
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .showUIWebView, object: nil)
             }
@@ -1903,8 +1846,8 @@ class RemoteControlManager {
             let history = parseHistoryFromDoneCommand(from: data)
             let connectionId = (data as? [String: Any])?["connectionId"] as? String ?? ""
 
-            passageLogger.info("[COMMAND HANDLER] Extracted connectionId: \(connectionId)")
-            passageLogger.info("[COMMAND HANDLER] Parsed \(history.count) history items")
+            passageLogger.debug("[COMMAND HANDLER] Extracted connectionId: \(connectionId)")
+            passageLogger.debug("[COMMAND HANDLER] Parsed \(history.count) history items")
 
             let successData = PassageSuccessData(
                 history: history,
@@ -1912,13 +1855,13 @@ class RemoteControlManager {
                 data: data  // Pass all done command data
             )
 
-            passageLogger.info("[COMMAND HANDLER] About to call onSuccess callback")
+            passageLogger.debug("[COMMAND HANDLER] About to call onSuccess callback")
             onSuccess?(successData)
-            passageLogger.info("[COMMAND HANDLER] onSuccess callback completed")
+            passageLogger.debug("[COMMAND HANDLER] onSuccess callback completed")
 
             // Navigate to success URL in UI webview (only if redirectOnDoneCommand is true)
             if redirectOnDoneCommand {
-                passageLogger.info("[COMMAND HANDLER] Redirecting to success URL (redirectOnDoneCommand: true)")
+                passageLogger.debug("[COMMAND HANDLER] Redirecting to success URL (redirectOnDoneCommand: true)")
                 let successUrl = buildConnectUrl(success: true)
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(
@@ -1928,7 +1871,7 @@ class RemoteControlManager {
                     )
                 }
             } else {
-                passageLogger.info("[COMMAND HANDLER] Skipping redirect to success URL (redirectOnDoneCommand: false)")
+                passageLogger.debug("[COMMAND HANDLER] Skipping redirect to success URL (redirectOnDoneCommand: false)")
             }
         } else {
             let errorMessage = (data as? [String: Any])?["error"] as? String ?? "Done command indicates failure"
@@ -1939,7 +1882,7 @@ class RemoteControlManager {
 
             // Navigate to error URL in UI webview (only if redirectOnDoneCommand is true)
             if redirectOnDoneCommand {
-                passageLogger.info("[COMMAND HANDLER] Redirecting to error URL (redirectOnDoneCommand: true)")
+                passageLogger.debug("[COMMAND HANDLER] Redirecting to error URL (redirectOnDoneCommand: true)")
                 let errorUrl = buildConnectUrl(success: false, error: errorMessage)
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(
@@ -1949,7 +1892,7 @@ class RemoteControlManager {
                     )
                 }
             } else {
-                passageLogger.info("[COMMAND HANDLER] Skipping redirect to error URL (redirectOnDoneCommand: false)")
+                passageLogger.debug("[COMMAND HANDLER] Skipping redirect to error URL (redirectOnDoneCommand: false)")
             }
         }
     }
@@ -1971,14 +1914,14 @@ class RemoteControlManager {
 
         // Check if history is directly an array (Format 1: data.history = [...])
         if let historyArray = commandData["history"] as? [[String: Any]] {
-            passageLogger.info("[COMMAND HANDLER] Format 1: Parsed \(historyArray.count) history items from direct array")
+            passageLogger.debug("[COMMAND HANDLER] Format 1: Parsed \(historyArray.count) history items from direct array")
             return historyArray
         }
 
         // Check if history is a nested structure (Format 2: data.history.history = [...])
         if let historyWrapper = commandData["history"] as? [String: Any],
            let historyArray = historyWrapper["history"] as? [[String: Any]] {
-            passageLogger.info("[COMMAND HANDLER] Format 2: Parsed \(historyArray.count) history items from nested structure")
+            passageLogger.debug("[COMMAND HANDLER] Format 2: Parsed \(historyArray.count) history items from nested structure")
             return historyArray
         }
 
@@ -2026,6 +1969,8 @@ class RemoteControlManager {
 
     private func sendError(commandId: String, error: String, data: Any? = nil) {
         // Error results don't typically include page data in React Native either
+        passageLogger.info("[REMOTE CONTROL] sendError called for command: \(commandId)")
+
         let result = CommandResult(
             id: commandId,
             status: "error",
@@ -2058,6 +2003,7 @@ class RemoteControlManager {
             pageData: structuredPageData,
             error: nil
         )
+        passageLogger.debug("[REMOTE CONTROL] Sending command result for command: \(commandId))")
         sendResult(result)
     }
 
@@ -2231,7 +2177,7 @@ class RemoteControlManager {
                 }
             }
 
-            passageLogger.info("[REMOTE CONTROL] Extracted cookie domains from current URL: \(domainsToCollect)")
+            passageLogger.debug("[REMOTE CONTROL] Extracted cookie domains from current URL: \(domainsToCollect)")
         }
 
         guard !domainsToCollect.isEmpty else {
@@ -2370,8 +2316,8 @@ class RemoteControlManager {
         }
 
         let urlString = "\(config.socketUrl)\(PassageConstants.Paths.automationCommandResult)"
-        passageLogger.info("[REMOTE CONTROL] Sending result to: \(urlString)")
-        passageLogger.info("[REMOTE CONTROL] Command ID: \(result.id), Status: \(result.status)")
+        passageLogger.info("[REMOTE CONTROL] Sending command result - ID: \(result.id), Status: \(result.status)")
+        passageLogger.debug("[REMOTE CONTROL] Sending result to: \(urlString)")
 
         // Log page data status (matching React Native's truncated logging approach)
         if let pageData = result.pageData {
@@ -2385,17 +2331,17 @@ class RemoteControlManager {
             } else {
                 screenshotInfo = " (no screenshot capture)"
             }
-            passageLogger.info("[REMOTE CONTROL] ✅ Sending result WITH page data\(screenshotInfo): {")
-            passageLogger.info("[REMOTE CONTROL]   cookies: \(pageData.cookies?.count ?? 0) items")
-            passageLogger.info("[REMOTE CONTROL]   localStorage: \(pageData.localStorage?.count ?? 0) items")
-            passageLogger.info("[REMOTE CONTROL]   sessionStorage: \(pageData.sessionStorage?.count ?? 0) items")
-            passageLogger.info("[REMOTE CONTROL]   html: \(passageLogger.truncateHtml(pageData.html))")
-            passageLogger.info("[REMOTE CONTROL]   screenshot: \(pageData.screenshot != nil ? "\(pageData.screenshot!.count) chars (redacted)" : "nil")")
-            passageLogger.info("[REMOTE CONTROL]   url: \(pageData.url ?? "nil")")
-            passageLogger.info("[REMOTE CONTROL] } (matches React Native SDK functionality)")
+            passageLogger.debug("[REMOTE CONTROL] ✅ Sending result WITH page data\(screenshotInfo): {")
+            passageLogger.debug("[REMOTE CONTROL]   cookies: \(pageData.cookies?.count ?? 0) items")
+            passageLogger.debug("[REMOTE CONTROL]   localStorage: \(pageData.localStorage?.count ?? 0) items")
+            passageLogger.debug("[REMOTE CONTROL]   sessionStorage: \(pageData.sessionStorage?.count ?? 0) items")
+            passageLogger.debug("[REMOTE CONTROL]   html: \(passageLogger.truncateHtml(pageData.html))")
+            passageLogger.debug("[REMOTE CONTROL]   screenshot: \(pageData.screenshot != nil ? "\(pageData.screenshot!.count) chars (redacted)" : "nil")")
+            passageLogger.debug("[REMOTE CONTROL]   url: \(pageData.url ?? "nil")")
+            passageLogger.debug("[REMOTE CONTROL] } (matches React Native SDK functionality)")
         } else {
             passageLogger.warn("[REMOTE CONTROL] ⚠️ Sending result WITHOUT page data (pageData: nil)")
-            passageLogger.warn("[REMOTE CONTROL] React Native SDK would include: HTML, localStorage, sessionStorage, cookies, URL, screenshot")
+            passageLogger.debug("[REMOTE CONTROL] React Native SDK would include: HTML, localStorage, sessionStorage, cookies, URL, screenshot")
         }
 
         guard let url = URL(string: urlString) else {
@@ -2412,18 +2358,18 @@ class RemoteControlManager {
             let jsonData = try JSONEncoder().encode(result)
             request.httpBody = jsonData
 
-            passageLogger.info("[REMOTE CONTROL] Sending HTTP POST request...")
+            passageLogger.debug("[REMOTE CONTROL] Sending HTTP POST request...")
 
             URLSession.shared.dataTask(with: request) { data, response, error in
                 if let error = error {
                     passageLogger.error("[REMOTE CONTROL] Error sending result: \(error)")
                 } else if let httpResponse = response as? HTTPURLResponse {
-                    passageLogger.info("[REMOTE CONTROL] Result sent successfully - Status: \(httpResponse.statusCode)")
+                    passageLogger.info("[REMOTE CONTROL] Result sent successfully commandId: \(result.id) - Status: \(httpResponse.statusCode)")
                     if let data = data, let responseString = String(data: data, encoding: .utf8) {
                         passageLogger.debug("[REMOTE CONTROL] Response: \(responseString)")
                     }
                 } else {
-                    passageLogger.debug("[REMOTE CONTROL] Result sent successfully")
+                    passageLogger.info("[REMOTE CONTROL] Result sent successfully commandId: \(result.id) - Status: \(httpResponse.statusCode)")
                 }
             }.resume()
 
@@ -2444,8 +2390,8 @@ class RemoteControlManager {
         let path = "/command/response/record"
         let fullUrlString = sessionBaseUrl + path
 
-        passageLogger.info("[REMOTE CONTROL] Sending result to session bus: \(fullUrlString)")
-        passageLogger.info("[REMOTE CONTROL] Command ID: \(result.id), Status: \(result.status)")
+        passageLogger.debug("[REMOTE CONTROL] Sending result to session bus: \(fullUrlString)")
+        passageLogger.debug("[REMOTE CONTROL] Command ID: \(result.id), Status: \(result.status)")
 
         guard let url = URL(string: fullUrlString) else {
             passageLogger.error("[REMOTE CONTROL] Invalid session bus URL: \(fullUrlString)")
@@ -2471,13 +2417,13 @@ class RemoteControlManager {
             ))
             request.httpBody = jsonData
 
-            passageLogger.info("[REMOTE CONTROL] Sending HTTP POST request to session bus...")
+            passageLogger.debug("[REMOTE CONTROL] Sending HTTP POST request to session bus...")
 
             URLSession.shared.dataTask(with: request) { data, response, error in
                 if let error = error {
                     passageLogger.error("[REMOTE CONTROL] Error sending result to session bus: \(error)")
                 } else if let httpResponse = response as? HTTPURLResponse {
-                    passageLogger.info("[REMOTE CONTROL] Result sent to session bus successfully - Status: \(httpResponse.statusCode)")
+                    passageLogger.debug("[REMOTE CONTROL] Result sent to session bus successfully - Status: \(httpResponse.statusCode)")
                     if let data = data, let responseString = String(data: data, encoding: .utf8) {
                         passageLogger.debug("[REMOTE CONTROL] Session bus response: \(responseString)")
                     }
@@ -2501,7 +2447,7 @@ class RemoteControlManager {
                 if let commandId = message["commandId"] as? String,
                    let status = message["status"] as? String {
 
-                    passageLogger.info("[REMOTE CONTROL] Command result: \(commandId), status: \(status)")
+                    passageLogger.info("[REMOTE CONTROL] Command result from webview: \(commandId), status: \(status)")
 
                     if status == "success" {
                         let result = message["data"]
@@ -2518,7 +2464,7 @@ class RemoteControlManager {
                     passageLogger.info("[REMOTE CONTROL] waitForInteraction event received for command: \(commandId)")
 
                     if let interactionType = message["interactionType"] as? String {
-                        passageLogger.info("[REMOTE CONTROL] Interaction type: \(interactionType)")
+                        passageLogger.debug("[REMOTE CONTROL] Interaction type: \(interactionType)")
 
                         // Extract interaction value
                         let interactionValue = message["value"] as? [String: Any] ?? [:]
@@ -2575,7 +2521,7 @@ class RemoteControlManager {
                                     )
 
                                     self.sendResult(result)
-                                    passageLogger.info("[REMOTE CONTROL] Interaction data sent successfully")
+                                    passageLogger.debug("[REMOTE CONTROL] Interaction data sent successfully")
                                     continuation.resume()
                                 }
                             }
@@ -2644,14 +2590,14 @@ class RemoteControlManager {
 
                         case "waitForInteraction":
                             // Handle user interaction events (click, scroll, blur/input)
-                            passageLogger.info("[REMOTE CONTROL] waitForInteraction event received")
+                            passageLogger.debug("[REMOTE CONTROL] waitForInteraction event received")
 
                             // Use the entire value object which contains all the interaction data
                             let interactionData = parsedData["value"] as? [String: Any] ?? [:]
 
                             // Log the interaction type if available
                             if let interactionType = interactionData["interactionType"] as? String {
-                                passageLogger.info("[REMOTE CONTROL] Interaction type: \(interactionType)")
+                                passageLogger.debug("[REMOTE CONTROL] Interaction type: \(interactionType)")
                             }
 
                             passageLogger.debug("[REMOTE CONTROL] Full interaction data: \(interactionData)")
@@ -2670,7 +2616,7 @@ class RemoteControlManager {
                                         )
 
                                         self.sendResult(result)
-                                        passageLogger.info("[REMOTE CONTROL] Interaction data sent successfully")
+                                        passageLogger.debug("[REMOTE CONTROL] Interaction data sent successfully")
                                         continuation.resume()
                                     }
                                 }
@@ -2716,7 +2662,7 @@ class RemoteControlManager {
         // Switch to UI webview before completing (only in record mode)
         let isRecordMode = getRecordFlag()
         if isRecordMode && currentWebViewType != PassageConstants.WebViewTypes.ui {
-            passageLogger.info("[REMOTE CONTROL] Record mode: Switching to UI webview for recording completion and locking it")
+            passageLogger.debug("[REMOTE CONTROL] Record mode: Switching to UI webview for recording completion and locking it")
             DispatchQueue.main.async {
                 NotificationCenter.default.post(
                     name: .showUIWebView,
@@ -2759,7 +2705,7 @@ class RemoteControlManager {
                         onSuccess(successData)
                     }
 
-                    passageLogger.info("[REMOTE CONTROL] Recording completed successfully")
+                    passageLogger.debug("[REMOTE CONTROL] Recording completed successfully")
                     continuation.resume()
                 }
             }
@@ -2792,7 +2738,7 @@ class RemoteControlManager {
 
                 Task {
                     self.sendResult(result)
-                    passageLogger.info("[REMOTE CONTROL] Recording data captured successfully")
+                    passageLogger.debug("[REMOTE CONTROL] Recording data captured successfully")
                     continuation.resume()
                 }
             }
@@ -2853,11 +2799,9 @@ class RemoteControlManager {
     }
 
     func disconnect() {
-        passageLogger.info("[REMOTE CONTROL] ========== DISCONNECTING ==========")
-        passageLogger.info("[REMOTE CONTROL] Current connection state: \(isConnected)")
+        passageLogger.info("[REMOTE CONTROL] DISCONNECTING: Current connection state: \(isConnected)")
 
         if let socket = socket {
-            passageLogger.info("[REMOTE CONTROL] Socket status before disconnect: \(socket.status)")
             socket.removeAllHandlers()
             passageLogger.info("[REMOTE CONTROL] Socket event handlers removed")
             socket.disconnect()

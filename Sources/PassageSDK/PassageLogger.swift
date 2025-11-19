@@ -112,6 +112,12 @@ public class PassageLogger {
         return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
     }()
     
+    private static let iso8601Formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    
     public var sdkVersion: String?
     
     private init() {
@@ -121,14 +127,21 @@ public class PassageLogger {
     // Configure logger with debug flag (HTTP transport always enabled)
     public func configure(debug: Bool, level: PassageLogLevel? = nil, sdkVersion: String? = nil) {
         self.isDebugEnabled = debug
-        self.logLevel = level ?? (debug ? .debug : .info)
+        // If debug is true, force .debug level unless a more verbose level was requested (which .debug is 0, so it is the most verbose)
+        // If debug is false, use provided level or default to .info
+        if debug {
+            self.logLevel = .debug
+        } else {
+            self.logLevel = level ?? .info
+        }
+        
         self.sdkVersion = sdkVersion
         self.httpTransportEnabled = true // Always enabled
         
         startHttpTransport()
         
         if debug {
-            info("Logger configured with debug enabled, HTTP transport: enabled, SDK version: \(sdkVersion ?? "unknown")")
+            info("Logger configured with debug enabled, level: \(self.logLevel), HTTP transport: enabled, SDK version: \(sdkVersion ?? "unknown")")
         }
     }
 
@@ -206,6 +219,13 @@ public class PassageLogger {
             name: UIApplication.willTerminateNotification,
             object: nil
         )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
         #endif
     }
     
@@ -215,6 +235,10 @@ public class PassageLogger {
     }
     
     @objc private func appWillTerminate() {
+        flushLogs()
+    }
+    
+    @objc private func appWillEnterForeground() {
         flushLogs()
     }
     #endif
@@ -237,10 +261,7 @@ public class PassageLogger {
     
     // Check if we should log at the given level
     private func shouldLog(_ level: PassageLogLevel) -> Bool {
-        // When debug is disabled, suppress ALL logging
-        if !isDebugEnabled {
-            return false
-        }
+        // We filter based on logLevel
         return level.rawValue >= logLevel.rawValue
     }
     
@@ -285,7 +306,7 @@ public class PassageLogger {
                 message: message,
                 context: context,
                 metadata: metadata,
-                timestamp: ISO8601DateFormatter().string(from: Date()),
+                timestamp: PassageLogger.iso8601Formatter.string(from: Date()),
                 sessionId: sessionId,
                 sdkVersion: sdkVersion,
                 appVersion: appVersion,
