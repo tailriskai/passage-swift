@@ -718,6 +718,26 @@ class RemoteControlManager {
         return nil
     }
 
+    private func extractSessionId(from token: String) -> String? {
+        let components = token.components(separatedBy: ".")
+        guard components.count == 3 else { return nil }
+
+        let payload = components[1]
+        let paddedPayload = addPadding(to: payload)
+
+        guard let data = Data(base64Encoded: paddedPayload) else { return nil }
+
+        do {
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let sessionId = json["sessionId"] as? String {
+                return sessionId
+            }
+        } catch {
+            return nil
+        }
+        return nil
+    }
+
     func getClearAllCookiesFlag() -> Bool {
         guard let intentToken = intentToken else { return false }
         return extractClearAllCookiesFlag(from: intentToken)
@@ -1070,6 +1090,15 @@ class RemoteControlManager {
         onPromptComplete: ((PassagePromptResponse) -> Void)? = nil
     ) {
         self.intentToken = intentToken
+        
+        if let sessionId = extractSessionId(from: intentToken) {
+            passageLogger.info("[REMOTE CONTROL] Connecting with Session ID: \(sessionId)")
+            passageLogger.debug("[REMOTE CONTROL] Full Intent Token: \(intentToken)")
+        } else {
+            passageLogger.warn("[REMOTE CONTROL] Could not extract Session ID from intent token")
+            passageLogger.debug("[REMOTE CONTROL] Full Intent Token: \(intentToken)")
+        }
+
         self.onSuccess = onSuccess
         self.onError = onError
         self.onDataComplete = onDataComplete
@@ -1364,12 +1393,13 @@ class RemoteControlManager {
         passageLogger.debug("[SOCKET HANDLERS] Setting up all socket event handlers")
 
         socket?.on(clientEvent: .connect) { [weak self] data, ack in
-            passageLogger.info("[SOCKET EVENT] ✅ CONNECTED to server, connection ID: \(data)")
+            passageLogger.info("[SOCKET EVENT] ✅ CONNECTED to server")
+            passageLogger.info("[SOCKET EVENT] Connection Data: \(data)")
             self?.isConnected = true
 
             // Log socket details after connection
             if let socket = self?.socket {
-                passageLogger.debug("[SOCKET INFO] Socket ID: \(socket.sid ?? "no-sid")")
+                passageLogger.info("[SOCKET INFO] Socket ID: \(socket.sid ?? "no-sid")")
                 passageLogger.debug("[SOCKET INFO] Status: \(socket.status)")
                 passageLogger.debug("[SOCKET INFO] Manager status: \(socket.manager?.status ?? .notConnected)")
                 passageAnalytics.trackRemoteControlConnectSuccess(socketId: socket.sid)
@@ -1377,13 +1407,13 @@ class RemoteControlManager {
         }
 
         socket?.on(clientEvent: .error) { [weak self] data, ack in
-            passageLogger.error("[SOCKET EVENT] ❌ ERROR occurred: \(data)")
+            passageLogger.error("[SOCKET EVENT] ❌ SOCKET ERROR: \(data)")
             passageAnalytics.trackRemoteControlConnectError(error: String(describing: data), attempt: 1)
 
             // Try to parse error details
             if let errorArray = data.first as? [Any], !errorArray.isEmpty {
                 for (index, item) in errorArray.enumerated() {
-                    passageLogger.debug("[SOCKET EVENT] Error item \(index): \(item)")
+                    passageLogger.error("[SOCKET EVENT] Error item \(index): \(item)")
                 }
             }
 
@@ -1394,7 +1424,8 @@ class RemoteControlManager {
         }
 
         socket?.on(clientEvent: .disconnect) { [weak self] data, ack in
-            passageLogger.warn("[SOCKET EVENT] 🔌 DISCONNECTED from server: \(data)")
+            passageLogger.warn("[SOCKET EVENT] 🔌 DISCONNECTED from server")
+            passageLogger.warn("[SOCKET EVENT] Disconnect Reason/Data: \(data)")
             self?.isConnected = false
             passageAnalytics.trackRemoteControlDisconnect(reason: "\(data)")
 

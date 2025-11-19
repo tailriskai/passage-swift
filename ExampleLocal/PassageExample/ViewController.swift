@@ -5,10 +5,10 @@ import WebKit
 class ViewController: UIViewController {
 
     // MARK: - Configuration URLs
-    private let passageUIUrl = "http://localhost:3001"
-    private let passageAPIUrl = "http://localhost:3000"
+    private let passageUIUrl = "https://ui.marcini.work"
+    private let passageAPIUrl = "https://api.marcini.work"
     private let passageSessionUrl = "http://localhost:8787"
-    private let passageSocketUrl = "http://localhost:3000"
+    private let passageSocketUrl = "https://api.marcini.work"
     private let defaultPublishableKey = "pk-live-0d017c4c-307e-441c-8b72-cb60f64f77f8"
 
     // MARK: - UI Components
