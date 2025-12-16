@@ -92,6 +92,10 @@ iOSInjectionProject/
 # macOS
 .DS_Store
 
+# Environment files
+.env
+.env.local
+
 # SPM
 .build
 .swiftpm

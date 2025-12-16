@@ -5,11 +5,26 @@ import WebKit
 class ViewController: UIViewController {
 
     // MARK: - Configuration URLs
-    private let passageUIUrl = "https://ui.marcini.work"
-    private let passageAPIUrl = "https://api.marcini.work"
-    private let passageSessionUrl = "http://localhost:8787"
-    private let passageSocketUrl = "https://api.marcini.work"
-    private let defaultPublishableKey = "pk-live-0d017c4c-307e-441c-8b72-cb60f64f77f8"
+    private let passageUIUrl = EnvironmentConfig.shared.get(
+        "PASSAGE_UI_URL",
+        fallback: "https://ui.runpassage.ai"
+    )
+    private let passageAPIUrl = EnvironmentConfig.shared.get(
+        "PASSAGE_API_URL",
+        fallback: "https://api.runpassage.ai"
+    )
+    private let passageSessionUrl = EnvironmentConfig.shared.get(
+        "PASSAGE_SESSION_URL",
+        fallback: "https://session.runpassage.ai"
+    )
+    private let passageSocketUrl = EnvironmentConfig.shared.get(
+        "PASSAGE_SOCKET_URL",
+        fallback: "https://api.runpassage.ai"
+    )
+    private let defaultPublishableKey = EnvironmentConfig.shared.get(
+        "PASSAGE_PUBLISHABLE_KEY",
+        fallback: "pk-live-0d017c4c-307e-441c-8b72-cb60f64f77f8"
+    )
 
     // MARK: - UI Components
     private var titleLabel: UILabel!
