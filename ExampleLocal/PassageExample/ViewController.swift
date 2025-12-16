@@ -77,7 +77,7 @@ class ViewController: UIViewController {
             apiUrl: passageAPIUrl,
             sessionUrl: passageSessionUrl,
             socketUrl: passageSocketUrl,
-            logLevel: .info
+            debug: true
         )
 
         print("Configuring SDK with:")
