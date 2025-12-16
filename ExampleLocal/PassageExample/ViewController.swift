@@ -15,7 +15,7 @@ class ViewController: UIViewController {
     )
     private let passageSessionUrl = EnvironmentConfig.shared.get(
         "PASSAGE_SESSION_URL",
-        fallback: "http://localhost:8787"
+        fallback: "https://session.runpassage.ai"
     )
     private let passageSocketUrl = EnvironmentConfig.shared.get(
         "PASSAGE_SOCKET_URL",
